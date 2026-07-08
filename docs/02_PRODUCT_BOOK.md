@@ -1,187 +1,94 @@
-# KanonOS Product Book
+# KanonOS – Product Book
 
-Version: 1.0 (Draft)
-
----
-
-# 1. Vision
-
-KanonOS exists to become the daily operating system for sports coaches.
-
-The objective is not to create another sports management platform.
-
-The objective is to become the place where coaches think, plan, execute, evaluate and continuously improve their work.
-
-The platform should reduce administrative work while increasing the quality and consistency of coaching.
+**Version:** 1.0  
+**Status:** Active  
+**Last Updated:** 2026-07-08
 
 ---
 
-# 2. Mission
+# Purpose
 
-Help coaches spend less time managing information and more time coaching athletes.
+KanonOS exists to simplify the daily work of sports coaches.
 
-Every feature inside KanonOS must save time, organise knowledge or improve decision-making.
+The platform centralises planning, execution, evaluation and team management into one connected workspace.
 
-If a feature does not achieve at least one of these goals, it should not exist.
-
----
-
-# 3. The Problem
-
-Most coaches still work with multiple disconnected tools.
-
-Typical workflow today:
-
-• Word
-
-• Excel
-
-• Paper
-
-• Google Drive
-
-• WhatsApp
-
-• Personal Notes
-
-This creates several problems.
-
-- Information is duplicated.
-- Knowledge is lost every season.
-- Planning is inconsistent.
-- Communication becomes fragmented.
-- Administrative work consumes valuable coaching time.
-
-The coach spends more time organising information than actually coaching.
+The goal is not to replace the coach, but to remove administrative friction and improve coaching quality.
 
 ---
 
-# 4. Our Vision of Coaching
+# Primary User
 
-A coach does not simply create training sessions.
+The first and most important user is the coach.
 
-A coach continuously follows a cycle.
+Every feature must create value for the coach before creating value for coordinators, parents or athletes.
 
-Planning
+Future user roles:
 
-↓
-
-Execution
-
-↓
-
-Evaluation
-
-↓
-
-Learning
-
-↓
-
-Better Planning
-
-KanonOS is built around this coaching cycle.
+- Coach
+- Technical Coordinator
+- Parent
+- Athlete
+- Club Administrator
 
 ---
 
-# 5. Product Philosophy
+# Product Principles
 
-The platform follows five fundamental beliefs.
+Every decision should respect these principles.
 
 ## Coach First
 
-Every feature must provide value to the coach before creating value for coordinators, parents or athletes.
+The coach is the centre of the platform.
 
-The coach is always the primary user.
-
----
-
-## Knowledge over Documents
-
-KanonOS does not store documents.
-
-It stores knowledge.
-
-Every training session, evaluation and planning decision contributes to a growing knowledge base.
+Every workflow starts from the coach's needs.
 
 ---
 
-## Planning before Execution
+## Planning Drives Everything
 
-Training sessions never exist without purpose.
+Training sessions are not isolated documents.
 
-Every session originates from an objective.
+Every session exists because of an objective.
 
-Objectives drive planning.
-
-Planning drives execution.
-
-Execution generates evaluation.
-
-Evaluation improves future planning.
+Planning connects every module.
 
 ---
 
-## Simplicity over Features
+## One Entry Only
 
-Every screen should answer one simple question.
+Information should only be entered once.
 
-Users should never feel overwhelmed.
-
-Removing unnecessary complexity is more valuable than adding functionality.
+Existing information should always be reused whenever possible.
 
 ---
 
-## Progressive Growth
+## Simplicity Over Complexity
 
-The platform should grow alongside the coach.
+The interface should reduce cognitive load.
 
-Beginners should feel comfortable.
-
-Experienced coaches should discover more powerful planning tools over time.
+The coach should spend time coaching, not learning software.
 
 ---
 
-# 6. Product Principles
+## Modular Growth
 
-The KanonOS must always:
+The MVP solves one clear problem.
 
-- Reduce administrative work.
-- Respect every coaching methodology.
-- Never force a specific planning philosophy.
-- Require information only once.
-- Keep interfaces clean.
-- Prioritise mobile experience during training.
-- Be modular.
-- Be scalable.
-- Reuse existing information whenever possible.
-- Keep coaches focused on coaching.
+New functionality is added through modules without changing the existing workflow.
 
 ---
 
-# 7. Target Users
+## AI as an Assistant
 
-Primary User
+Artificial Intelligence helps organise information, generate suggestions and automate repetitive work.
 
-Sports Coach
-
-Secondary Users
-
-Technical Coordinator
-
-Parents
-
-Athletes
-
-Club Management
-
-Each new user type should only be introduced after delivering clear value to coaches.
+The coach always makes the final decision.
 
 ---
 
-# 8. Product Architecture
+# The Coach Workflow
 
-The platform is organised around one continuous workflow.
+The daily workflow follows a continuous cycle.
 
 Workspace
 
@@ -201,19 +108,40 @@ Review
 
 History
 
-This flow should remain simple and uninterrupted.
+↓
+
+Better Planning
+
+Every module supports this cycle.
 
 ---
 
-# 9. Planning Engine
+# Core Modules
+
+## 1. Coach Workspace
+
+The Workspace is the coach's home screen.
+
+It provides:
+
+- Today's schedule
+- Upcoming training sessions
+- Teams
+- Pending tasks
+- Recent work
+- Notifications
+
+The Workspace is not an analytics dashboard.
+
+It is the coach's daily operating system.
+
+---
+
+## 2. Planning
 
 Planning is the heart of KanonOS.
 
-The platform does not replace coaching methodologies.
-
-Instead, it provides a flexible structure capable of supporting any coaching philosophy.
-
-Planning follows a hierarchical model.
+The complete planning hierarchy is:
 
 Season
 
@@ -233,28 +161,134 @@ Week
 
 Training Session
 
-Every level shares the same structure.
+The MVP only exposes:
 
-Objective
+- Weekly Planning
+- Training Session
 
-↓
+Future levels will be unlocked without changing the workflow.
 
-Timeframe
+---
 
-↓
+## 3. Training Session
 
-Metrics
+Each training session contains:
 
-↓
+- Objective
+- Planned athletes
+- Exercises
+- Session timeline
+- Materials
+- Coach notes
 
-Notes
+The coach should be able to use the session live during training.
 
-↓
+---
 
-Associated Elements
+## 4. Training Review
 
-This architecture allows the platform to scale naturally without changing the coach's workflow.
+After training the coach records:
 
-For the MVP only Week and Training Session are available.
+- Attendance
+- Session completed
+- Overall rating
+- What worked well
+- What should improve
+- Additional notes
 
-The remaining planning levels already exist conceptually and will be progressively introduced.
+The review updates the team's history.
+
+---
+
+## 5. Teams
+
+Each team contains:
+
+- Players
+- Coaches
+- Season objectives
+- Weekly planning
+- Training history
+- Attendance
+- Evaluations
+
+Teams are the operational context for planning.
+
+---
+
+# MVP Scope
+
+The MVP focuses on replacing paper, Word and Excel.
+
+Included:
+
+- Coach Workspace
+- Teams
+- Weekly Planning
+- Training Session
+- Training Review
+- History
+
+Excluded:
+
+- Parent Portal
+- Athlete App
+- Coordinator Dashboard
+- Video Analysis
+- Advanced Reports
+- AI Planning
+- External Integrations
+
+---
+
+# Future Vision
+
+The platform will progressively expand through independent modules.
+
+Examples:
+
+- Annual Planning
+- Season Planning
+- Evaluation System
+- Exercise Library
+- Athlete Passport
+- Wellness Questionnaires
+- Parent Communication
+- Coordinator Dashboard
+- Video & Scouting
+- API Integrations (Hudl, Spiideo and others)
+
+Each module should connect naturally with the existing workflow.
+
+---
+
+# Product Success
+
+A coach should be able to:
+
+- Plan the week.
+- Build a training session.
+- Run the session.
+- Record attendance.
+- Review the session.
+
+Without using paper, Word or Excel.
+
+If this is achieved, the MVP is successful.
+
+---
+
+# Product Mandates
+
+KanonOS must always:
+
+- Put coaches first.
+- Respect every coaching methodology.
+- Keep interfaces simple.
+- Reduce administrative work.
+- Preserve coaching knowledge.
+- Support long-term planning.
+- Be mobile-friendly during training.
+- Grow through modular features.
+- Avoid duplicated information.
+- Stay focused on solving real coaching problems.
