@@ -26,7 +26,29 @@ export type Team = {
   season: string;
   color: string;
   sport: string;
+  age_category: string | null;
   athlete_count: number;
+  created_at: string;
+};
+
+export type AthleteStatus = 'active' | 'inactive';
+export type AthleteGender = 'male' | 'female' | 'other';
+
+export type Athlete = {
+  id: string;
+  name: string;
+  date_of_birth: string;
+  gender: AthleteGender;
+  jersey_number: number | null;
+  position: string | null;
+  status: AthleteStatus;
+  created_at: string;
+};
+
+export type TeamAthlete = {
+  id: string;
+  team_id: string;
+  athlete_id: string;
   created_at: string;
 };
 
@@ -57,6 +79,9 @@ export type Exercise = {
   duration_minutes: number;
   order_index: number;
   category: ExerciseCategory;
+  objective: string | null;
+  equipment: string | null;
+  logistics: string | null;
   created_at: string;
 };
 

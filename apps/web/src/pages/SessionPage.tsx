@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ArrowLeft, Clock, MapPin, Target, Plus, GripVertical, Trash2,
-  ChevronRight, ClipboardList, CheckCircle2, Pencil
+  ChevronRight, ClipboardList, CheckCircle2, Pencil, Copy, Package,
+  LayoutGrid
 } from 'lucide-react';
 import { supabase, type TrainingSession, type Exercise, type ExerciseCategory, type Team, type SessionReview, type SessionStatus } from '../lib/supabase';
 import { useNavigate } from '../lib/router';
@@ -24,6 +25,12 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
   const [editingSession, setEditingSession] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDeleteExercise, setShowDeleteExercise] = useState<Exercise | null>(null);
+
+  // Drag & drop state
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dragIndexRef = useRef<number | null>(null);
 
   const loadAll = useCallback(async () => {
     const { data: sessionData, error: sessionErr } = await supabase
@@ -63,9 +70,70 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
     setSession({ ...session, status: newStatus });
   };
 
-  const handleDeleteExercise = async (exerciseId: string) => {
-    await supabase.from('exercises').delete().eq('id', exerciseId);
-    setExercises(exercises.filter((e) => e.id !== exerciseId));
+  const handleDeleteExercise = async (exercise: Exercise) => {
+    await supabase.from('exercises').delete().eq('id', exercise.id);
+    setExercises(exercises.filter((e) => e.id !== exercise.id));
+    setShowDeleteExercise(null);
+  };
+
+  const handleDuplicateExercise = async (exercise: Exercise) => {
+    const { data } = await supabase.from('exercises').insert({
+      session_id: exercise.session_id,
+      name: `${exercise.name} (copy)`,
+      description: exercise.description,
+      duration_minutes: exercise.duration_minutes,
+      order_index: exercises.length,
+      category: exercise.category,
+      objective: exercise.objective,
+      equipment: exercise.equipment,
+      logistics: exercise.logistics,
+    }).select('*').single();
+    if (data) {
+      setExercises([...exercises, data as Exercise]);
+    }
+  };
+
+  const persistOrder = async (reordered: Exercise[]) => {
+    const updates = reordered.map((ex, i) =>
+      supabase.from('exercises').update({ order_index: i }).eq('id', ex.id)
+    );
+    await Promise.all(updates);
+  };
+
+  const handleDragStart = (index: number) => {
+    setDragIndex(index);
+    dragIndexRef.current = index;
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverIndex(index);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    const dragIdx = dragIndexRef.current;
+    if (dragIdx === null || dragIdx === dropIndex) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      dragIndexRef.current = null;
+      return;
+    }
+
+    const reordered = [...exercises];
+    const [moved] = reordered.splice(dragIdx, 1);
+    reordered.splice(dropIndex, 0, moved);
+    setExercises(reordered);
+    setDragIndex(null);
+    setDragOverIndex(null);
+    dragIndexRef.current = null;
+    persistOrder(reordered);
+  };
+
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setDragOverIndex(null);
+    dragIndexRef.current = null;
   };
 
   const handleDeleteSession = async () => {
@@ -192,7 +260,10 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
       {/* Exercises */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-ink-900">Exercises</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-ink-900">Exercises</h2>
+            <span className="text-xs text-ink-400">{exercises.length} · {totalDuration} min</span>
+          </div>
           <Button size="sm" variant="secondary" onClick={() => setShowAddExercise(true)}>
             <Plus size={14} /> Add exercise
           </Button>
@@ -202,37 +273,76 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
           <EmptyState
             icon={<ClipboardList size={36} />}
             title="No exercises yet"
-            description="Add exercises to structure your training session."
+            description="Add exercises to structure your training session. Drag to reorder."
             action={<Button size="sm" onClick={() => setShowAddExercise(true)}><Plus size={14} /> Add exercise</Button>}
           />
         ) : (
           <div className="space-y-2">
             {exercises.map((ex, i) => {
               const cat = CATEGORY_CONFIG[ex.category];
+              const isDragging = dragIndex === i;
+              const isDragOver = dragOverIndex === i && dragIndex !== null && dragIndex !== i;
+
               return (
-                <div key={ex.id} className="group bg-white rounded-xl border border-ink-100 p-4 hover:border-ink-200 transition-all">
+                <div
+                  key={ex.id}
+                  draggable
+                  onDragStart={() => handleDragStart(i)}
+                  onDragOver={(e) => handleDragOver(e, i)}
+                  onDrop={(e) => handleDrop(e, i)}
+                  onDragEnd={handleDragEnd}
+                  className={`group bg-white rounded-xl border p-4 transition-all ${
+                    isDragging ? 'opacity-40 border-ink-300 scale-[0.99]' :
+                    isDragOver ? 'border-accent-400 border-t-2' :
+                    'border-ink-100 hover:border-ink-200'
+                  }`}
+                >
                   <div className="flex items-start gap-3">
-                    <div className="flex flex-col items-center gap-1 pt-0.5">
-                      <GripVertical size={14} className="text-ink-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {/* Drag handle + number */}
+                    <div className="flex flex-col items-center gap-1 pt-0.5 cursor-grab active:cursor-grabbing">
+                      <GripVertical size={14} className="text-ink-300 group-hover:text-ink-400 transition-colors" />
                       <span className="text-xs font-bold text-ink-300">{i + 1}</span>
                     </div>
+
+                    {/* Card content */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      {/* Title row */}
+                      <div className="flex items-center gap-2 mb-2">
                         <h3 className="text-sm font-semibold text-ink-900">{ex.name}</h3>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${cat.bg} ${cat.color}`}>
                           {cat.label}
                         </span>
+                        <span className="flex items-center gap-1 text-[10px] text-ink-400 ml-auto">
+                          <Clock size={10} /> {ex.duration_minutes} min
+                        </span>
                       </div>
-                      {ex.description && <p className="text-xs text-ink-500 mt-1">{ex.description}</p>}
-                      <div className="flex items-center gap-3 mt-2 text-xs text-ink-400">
-                        <span className="flex items-center gap-1"><Clock size={11} /> {ex.duration_minutes} min</span>
+
+                      {/* Detail fields */}
+                      <div className="space-y-1.5">
+                        {ex.objective && (
+                          <DetailLine icon={<Target size={11} />} label="Objective" value={ex.objective} />
+                        )}
+                        {ex.description && (
+                          <DetailLine icon={<ClipboardList size={11} />} label="Description" value={ex.description} />
+                        )}
+                        {ex.equipment && (
+                          <DetailLine icon={<Package size={11} />} label="Equipment" value={ex.equipment} />
+                        )}
+                        {ex.logistics && (
+                          <DetailLine icon={<LayoutGrid size={11} />} label="Logistics" value={ex.logistics} />
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <IconButton onClick={() => setEditingExercise(ex)} className="w-7 h-7" aria-label="Edit exercise">
                         <Pencil size={13} />
                       </IconButton>
-                      <IconButton onClick={() => handleDeleteExercise(ex.id)} className="w-7 h-7" aria-label="Delete exercise">
+                      <IconButton onClick={() => handleDuplicateExercise(ex)} className="w-7 h-7" aria-label="Duplicate exercise">
+                        <Copy size={13} />
+                      </IconButton>
+                      <IconButton onClick={() => setShowDeleteExercise(ex)} className="w-7 h-7" aria-label="Delete exercise">
                         <Trash2 size={13} className="text-red-500" />
                       </IconButton>
                     </div>
@@ -287,6 +397,32 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
           <p className="text-sm text-ink-600">This will permanently delete the session and all its exercises. This cannot be undone.</p>
         </Modal>
       )}
+
+      {showDeleteExercise && (
+        <Modal
+          open
+          onClose={() => setShowDeleteExercise(null)}
+          title="Delete exercise?"
+          footer={
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setShowDeleteExercise(null)}>Cancel</Button>
+              <Button size="sm" onClick={() => handleDeleteExercise(showDeleteExercise)} className="bg-red-500 hover:bg-red-600">Delete</Button>
+            </>
+          }
+        >
+          <p className="text-sm text-ink-600">Remove "{showDeleteExercise.name}" from this session?</p>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function DetailLine({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-1.5 text-xs">
+      <span className="text-ink-400 mt-0.5 flex-shrink-0">{icon}</span>
+      <span className="text-ink-400 font-medium flex-shrink-0">{label}:</span>
+      <span className="text-ink-600">{value}</span>
     </div>
   );
 }
@@ -305,28 +441,32 @@ function ExerciseModal({
   onSaved: () => void;
 }) {
   const [name, setName] = useState(existing?.name || '');
+  const [objective, setObjective] = useState(existing?.objective || '');
   const [description, setDescription] = useState(existing?.description || '');
   const [duration, setDuration] = useState(existing?.duration_minutes || 15);
   const [category, setCategory] = useState<ExerciseCategory>(existing?.category || 'main');
+  const [equipment, setEquipment] = useState(existing?.equipment || '');
+  const [logistics, setLogistics] = useState(existing?.logistics || '');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
+    const payload = {
+      name: name.trim(),
+      objective: objective.trim() || null,
+      description: description.trim() || null,
+      duration_minutes: duration,
+      category,
+      equipment: equipment.trim() || null,
+      logistics: logistics.trim() || null,
+    };
     if (existing) {
-      await supabase.from('exercises').update({
-        name: name.trim(),
-        description: description.trim() || null,
-        duration_minutes: duration,
-        category,
-      }).eq('id', existing.id);
+      await supabase.from('exercises').update(payload).eq('id', existing.id);
     } else {
       await supabase.from('exercises').insert({
         session_id: sessionId,
-        name: name.trim(),
-        description: description.trim() || null,
-        duration_minutes: duration,
-        category,
+        ...payload,
         order_index: orderIndex,
       });
     }
@@ -339,6 +479,7 @@ function ExerciseModal({
       open
       onClose={onClose}
       title={existing ? 'Edit Exercise' : 'Add Exercise'}
+      maxWidth="max-w-xl"
       footer={
         <>
           <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
@@ -353,9 +494,15 @@ function ExerciseModal({
           <Label>Exercise name</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rondo 5v2" autoFocus />
         </div>
+
+        <div>
+          <Label>Objective</Label>
+          <Input value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="e.g. Improve quick decision-making under pressure" />
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label>Category</Label>
+            <Label>Type</Label>
             <Select value={category} onChange={(e) => setCategory(e.target.value as ExerciseCategory)}>
               <option value="warmup">Warm-up</option>
               <option value="main">Main</option>
@@ -368,9 +515,20 @@ function ExerciseModal({
             <Input type="number" min={1} value={duration} onChange={(e) => setDuration(parseInt(e.target.value) || 15)} />
           </div>
         </div>
+
         <div>
           <Label>Description</Label>
           <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Notes on setup, coaching points, progression…" />
+        </div>
+
+        <div>
+          <Label>Equipment</Label>
+          <Input value={equipment} onChange={(e) => setEquipment(e.target.value)} placeholder="e.g. 10 cones, 4 balls, 2 bibs" />
+        </div>
+
+        <div>
+          <Label>Logistics</Label>
+          <Textarea rows={2} value={logistics} onChange={(e) => setLogistics(e.target.value)} placeholder="e.g. Half pitch, groups of 4, 2 minutes rest between sets" />
         </div>
       </div>
     </Modal>

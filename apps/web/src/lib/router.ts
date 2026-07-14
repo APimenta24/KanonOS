@@ -4,6 +4,7 @@ export type Route =
   | { name: 'workspace' }
   | { name: 'planning' }
   | { name: 'planning-week'; year: number; week: number }
+  | { name: 'athletes' }
   | { name: 'teams' }
   | { name: 'team'; teamId: string }
   | { name: 'session'; sessionId: string }
@@ -17,6 +18,7 @@ export function parseHash(): Route {
   if (parts.length === 0) return { name: 'workspace' };
   if (parts[0] === 'planning' && parts.length === 1) return { name: 'planning' };
   if (parts[0] === 'planning' && parts.length === 3) return { name: 'planning-week', year: parseInt(parts[1]), week: parseInt(parts[2]) };
+  if (parts[0] === 'athletes') return { name: 'athletes' };
   if (parts[0] === 'teams' && parts.length === 1) return { name: 'teams' };
   if (parts[0] === 'teams' && parts.length === 2) return { name: 'team', teamId: parts[1] };
   if (parts[0] === 'session' && parts.length === 2) return { name: 'session', sessionId: parts[1] };
@@ -32,6 +34,7 @@ export function navigate(route: Route) {
     case 'workspace': hash = '#/'; break;
     case 'planning': hash = '#/planning'; break;
     case 'planning-week': hash = `#/planning/${route.year}/${route.week}`; break;
+    case 'athletes': hash = '#/athletes'; break;
     case 'teams': hash = '#/teams'; break;
     case 'team': hash = `#/teams/${route.teamId}`; break;
     case 'session': hash = `#/session/${route.sessionId}`; break;

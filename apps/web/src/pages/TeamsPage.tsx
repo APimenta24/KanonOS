@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Users, Trash2, MoreHorizontal } from 'lucide-react';
-import { supabase, type Team } from '../lib/supabase';
+import { Plus, Users, Trash2, MoreHorizontal, Search, Check } from 'lucide-react';
+import { supabase, type Team, type Athlete } from '../lib/supabase';
 import { useNavigate } from '../lib/router';
 import { LoadingState, EmptyState } from '../components/ui/States';
 import { Button } from '../components/ui/Button';
@@ -8,6 +8,8 @@ import { Modal } from '../components/ui/Modal';
 import { Input, Label } from '../components/ui/Form';
 
 const TEAM_COLORS = ['#3B82F6', '#14B8A6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#10B981', '#F97316'];
+
+const AGE_CATEGORIES = ['U-13', 'U-15', 'U-17', 'U-19', 'U-21', 'Senior'];
 
 export function TeamsPage() {
   const navigate = useNavigate();
@@ -64,7 +66,10 @@ export function TeamsPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-sm font-semibold text-ink-900 truncate">{team.name}</h3>
-                    <p className="text-xs text-ink-400">{team.sport} · {team.season}</p>
+                    <p className="text-xs text-ink-400">
+                      {team.age_category || '—'}
+                      {team.season ? ` · ${team.season}` : ''}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 text-xs text-ink-400">
@@ -101,22 +106,54 @@ export function TeamsPage() {
 
 function AddTeamModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState('');
-  const [sport, setSport] = useState('Futebol');
-  const [season, setSeason] = useState('2024/25');
-  const [athleteCount, setAthleteCount] = useState(0);
+  const [ageCategory, setAgeCategory] = useState(AGE_CATEGORIES[2]);
+  const [season, setSeason] = useState('');
   const [color, setColor] = useState(TEAM_COLORS[0]);
   const [saving, setSaving] = useState(false);
+
+  const [athletes, setAthletes] = useState<Athlete[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
+  const [athletesLoaded, setAthletesLoaded] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('athletes').select('*').eq('status', 'active').order('name', { ascending: true });
+      setAthletes((data as Athlete[]) || []);
+      setAthletesLoaded(true);
+    })();
+  }, []);
+
+  const filtered = athletes.filter((a) => a.name.toLowerCase().includes(search.toLowerCase()));
+
+  const toggleAthlete = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
-    await supabase.from('teams').insert({
+    const { data: teamData } = await supabase.from('teams').insert({
       name: name.trim(),
-      sport,
-      season,
-      athlete_count: athleteCount,
+      age_category: ageCategory,
+      season: season.trim() || null,
       color,
-    });
+      sport: 'Futebol',
+      athlete_count: selectedIds.size,
+    }).select('*').single();
+
+    if (teamData && selectedIds.size > 0) {
+      const inserts = Array.from(selectedIds).map((athleteId) => ({
+        team_id: (teamData as Team).id,
+        athlete_id: athleteId,
+      }));
+      await supabase.from('team_athletes').insert(inserts);
+    }
     setSaving(false);
     onSaved();
   };
@@ -126,6 +163,7 @@ function AddTeamModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
       open
       onClose={onClose}
       title="New Team"
+      maxWidth="max-w-xl"
       footer={
         <>
           <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
@@ -142,17 +180,19 @@ function AddTeamModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label>Sport</Label>
-            <Input value={sport} onChange={(e) => setSport(e.target.value)} placeholder="e.g. Futebol" />
+            <Label>Age category</Label>
+            <select
+              value={ageCategory}
+              onChange={(e) => setAgeCategory(e.target.value)}
+              className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 focus:border-ink-400 focus:ring-2 focus:ring-ink-100 focus:outline-none transition-all"
+            >
+              {AGE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
           <div>
-            <Label>Season</Label>
+            <Label>Season (optional)</Label>
             <Input value={season} onChange={(e) => setSeason(e.target.value)} placeholder="e.g. 2024/25" />
           </div>
-        </div>
-        <div>
-          <Label>Athlete count</Label>
-          <Input type="number" min={0} value={athleteCount} onChange={(e) => setAthleteCount(parseInt(e.target.value) || 0)} />
         </div>
         <div>
           <Label>Team color</Label>
@@ -165,6 +205,54 @@ function AddTeamModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
                 style={{ backgroundColor: c }}
               />
             ))}
+          </div>
+        </div>
+
+        {/* Athlete selection */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <Label>Select athletes</Label>
+            <span className="text-xs text-ink-400">{selectedIds.size} selected</span>
+          </div>
+          <div className="relative mb-2">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search athletes…"
+              className="pl-9"
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto scrollbar-thin border border-ink-100 rounded-lg">
+            {!athletesLoaded ? (
+              <div className="p-4 text-center text-xs text-ink-400">Loading athletes…</div>
+            ) : athletes.length === 0 ? (
+              <div className="p-4 text-center text-xs text-ink-400">No active athletes. Create athletes first.</div>
+            ) : filtered.length === 0 ? (
+              <div className="p-4 text-center text-xs text-ink-400">No matches.</div>
+            ) : (
+              filtered.map((a) => {
+                const selected = selectedIds.has(a.id);
+                return (
+                  <button
+                    key={a.id}
+                    onClick={() => toggleAthlete(a.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
+                      selected ? 'bg-accent-50' : 'hover:bg-ink-50'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${
+                      selected ? 'bg-ink-900 border-ink-900' : 'border-ink-300'
+                    }`}>
+                      {selected && <Check size={12} className="text-white" />}
+                    </div>
+                    <span className="text-sm text-ink-700 flex-1">{a.name}</span>
+                    {a.jersey_number !== null && <span className="text-xs text-ink-400">#{a.jersey_number}</span>}
+                    {a.position && <span className="text-xs text-ink-400">{a.position}</span>}
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
       </div>

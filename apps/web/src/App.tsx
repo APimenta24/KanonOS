@@ -4,6 +4,7 @@ import { WorkspacePage } from './pages/WorkspacePage';
 import { PlanningPage } from './pages/PlanningPage';
 import { PlanningWeekPage } from './pages/PlanningWeekPage';
 import { TeamsPage } from './pages/TeamsPage';
+import { AthletesPage } from './pages/AthletesPage';
 import { TeamDetailPage } from './pages/TeamDetailPage';
 import { SessionPage } from './pages/SessionPage';
 import { ReviewPage } from './pages/ReviewPage';
@@ -17,6 +18,7 @@ function App() {
       {route.name === 'workspace' && <WorkspacePage />}
       {route.name === 'planning' && <PlanningPage />}
       {route.name === 'planning-week' && <PlanningWeekPage year={route.year} week={route.week} />}
+      {route.name === 'athletes' && <AthletesPage />}
       {route.name === 'teams' && <TeamsPage />}
       {route.name === 'team' && <TeamDetailPage teamId={route.teamId} />}
       {route.name === 'session' && <SessionPage sessionId={route.sessionId} />}
