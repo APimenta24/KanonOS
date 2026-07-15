@@ -1,13 +1,22 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Plus, CalendarDays, MapPin, Clock, UserPlus, Search, Users } from 'lucide-react';
-import { supabase, type Team, type Athlete, type SessionWithTeam } from '../lib/supabase';
+import { ArrowLeft, Plus, CalendarDays, MapPin, Clock, UserPlus, Search, Users, Check, Pencil } from 'lucide-react';
+import { supabase, type Team, type Athlete, type AthleteGender, type AthleteStatus, type SessionWithTeam, type EventType } from '../lib/supabase';
 import { useNavigate } from '../lib/router';
 import { formatDateInput, getISOWeek } from '../lib/date';
-import { STATUS_CONFIG } from '../lib/constants';
+import { STATUS_CONFIG, EVENT_TYPE_CONFIG, EVENT_TYPES } from '../lib/constants';
 import { LoadingState, EmptyState } from '../components/ui/States';
 import { Button, IconButton } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Input, Textarea, Label } from '../components/ui/Form';
+import { Input, Textarea, Select, Label } from '../components/ui/Form';
+
+function calcAge(dob: string): number {
+  const birth = new Date(dob);
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
+  return age;
+}
 
 export function TeamDetailPage({ teamId }: { teamId: string }) {
   const navigate = useNavigate();
@@ -17,6 +26,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showRosterModal, setShowRosterModal] = useState(false);
+  const [editingAthlete, setEditingAthlete] = useState<Athlete | null>(null);
 
   const loadTeam = useCallback(async () => {
     const [{ data: teamData }, { data: sessionsData }, { data: rosterData }] = await Promise.all([
@@ -56,7 +66,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-ink-900">{team.name}</h1>
-              <p className="text-sm text-ink-400">
+              <p className="text-sm text-ink-500">
                 {team.age_category || '—'}
                 {team.season ? ` · ${team.season}` : ''}
                 {' · '}{roster.length} athletes
@@ -69,22 +79,22 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
             <UserPlus size={14} /> Manage roster
           </Button>
           <Button size="sm" onClick={() => setShowAddModal(true)}>
-            <Plus size={15} /> New session
+            <Plus size={15} /> New event
           </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-ink-100 p-4">
-          <p className="text-xs text-ink-400 mb-1">Total sessions</p>
+          <p className="text-xs font-medium text-ink-400 mb-1">Total events</p>
           <p className="text-2xl font-bold text-ink-900">{sessions.length}</p>
         </div>
         <div className="bg-white rounded-xl border border-ink-100 p-4">
-          <p className="text-xs text-ink-400 mb-1">Completed</p>
+          <p className="text-xs font-medium text-ink-400 mb-1">Completed</p>
           <p className="text-2xl font-bold text-emerald-600">{completed}</p>
         </div>
         <div className="bg-white rounded-xl border border-ink-100 p-4">
-          <p className="text-xs text-ink-400 mb-1">Planned</p>
+          <p className="text-xs font-medium text-ink-400 mb-1">Planned</p>
           <p className="text-2xl font-bold text-ink-900">{planned}</p>
         </div>
       </div>
@@ -99,7 +109,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
         </div>
         {roster.length === 0 ? (
           <EmptyState
-            icon={<Users size={36} />}
+            icon={<Users size={40} />}
             title="No athletes in this team"
             description="Add athletes to build your team roster."
             action={<Button size="sm" variant="secondary" onClick={() => setShowRosterModal(true)}><UserPlus size={14} /> Add athletes</Button>}
@@ -107,8 +117,8 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
         ) : (
           <div className="grid grid-cols-2 gap-2">
             {roster.map((a) => (
-              <div key={a.id} className="bg-white rounded-xl border border-ink-100 p-3 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-ink-100 flex items-center justify-center text-ink-500 font-semibold text-xs flex-shrink-0">
+              <div key={a.id} className="group relative bg-white rounded-xl border border-ink-100 p-3 flex items-center gap-3 hover:border-ink-200 transition-all">
+                <div className="w-9 h-9 rounded-full bg-ink-100 flex items-center justify-center text-ink-500 font-semibold text-sm flex-shrink-0">
                   {a.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -116,9 +126,16 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                   <div className="flex items-center gap-2 text-xs text-ink-400">
                     {a.jersey_number !== null && <span>#{a.jersey_number}</span>}
                     {a.position && <span>{a.position}</span>}
+                    <span>{calcAge(a.date_of_birth)} yrs</span>
                   </div>
                 </div>
                 <span className={`w-2 h-2 rounded-full ${a.status === 'active' ? 'bg-emerald-500' : 'bg-ink-300'}`} />
+                <button
+                  onClick={() => setEditingAthlete(a)}
+                  className="w-7 h-7 rounded-md hover:bg-ink-100 flex items-center justify-center text-ink-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Pencil size={13} />
+                </button>
               </div>
             ))}
           </div>
@@ -127,18 +144,20 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
 
       {/* Sessions */}
       <div>
-        <h2 className="text-sm font-semibold text-ink-900 mb-4">Sessions</h2>
+        <h2 className="text-sm font-semibold text-ink-900 mb-4">Events</h2>
         {sessions.length === 0 ? (
           <EmptyState
-            icon={<CalendarDays size={36} />}
-            title="No sessions yet"
-            description="Plan your first training session for this team."
-            action={<Button size="sm" onClick={() => setShowAddModal(true)}><Plus size={14} /> New session</Button>}
+            icon={<CalendarDays size={40} />}
+            title="No events yet"
+            description="Plan your first session for this team."
+            action={<Button size="sm" onClick={() => setShowAddModal(true)}><Plus size={14} /> New event</Button>}
           />
         ) : (
           <div className="space-y-2">
             {sessions.map((s) => {
               const status = STATUS_CONFIG[s.status];
+              const evType = EVENT_TYPE_CONFIG[s.event_type];
+              const Icon = evType.icon;
               return (
                 <button
                   key={s.id}
@@ -151,9 +170,15 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                     </span>
                     <span className="text-lg font-bold text-ink-900">{new Date(s.date).getDate()}</span>
                   </div>
-                  <div className="w-1 h-10 rounded-full" style={{ backgroundColor: team.color }} />
+                  <div className={`w-1 h-10 rounded-full ${evType.dot}`} />
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold text-ink-900 truncate">{s.title}</h3>
+                    <div className="flex items-center gap-2">
+                      <Icon size={12} className={`${evType.color} flex-shrink-0`} />
+                      <h3 className="text-sm font-semibold text-ink-900 truncate">{s.title}</h3>
+                      {s.event_type === 'match' && s.opponent && (
+                        <span className="text-xs text-ink-400">vs {s.opponent}</span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-3 mt-1 text-xs text-ink-400">
                       <span className="flex items-center gap-1"><Clock size={11} /> {s.time}</span>
                       {s.location && <span className="flex items-center gap-1"><MapPin size={11} /> {s.location}</span>}
@@ -186,7 +211,94 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
           onSaved={() => { setShowRosterModal(false); loadTeam(); }}
         />
       )}
+
+      {editingAthlete && (
+        <AthleteEditModal
+          athlete={editingAthlete}
+          onClose={() => setEditingAthlete(null)}
+          onSaved={() => { setEditingAthlete(null); loadTeam(); }}
+        />
+      )}
     </div>
+  );
+}
+
+function AthleteEditModal({ athlete, onClose, onSaved }: { athlete: Athlete; onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState(athlete.name);
+  const [dateOfBirth, setDateOfBirth] = useState(athlete.date_of_birth);
+  const [gender, setGender] = useState<AthleteGender>(athlete.gender);
+  const [jerseyNumber, setJerseyNumber] = useState(athlete.jersey_number?.toString() || '');
+  const [position, setPosition] = useState(athlete.position || '');
+  const [status, setStatus] = useState<AthleteStatus>(athlete.status);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim() || !dateOfBirth) return;
+    setSaving(true);
+    await supabase.from('athletes').update({
+      name: name.trim(),
+      date_of_birth: dateOfBirth,
+      gender,
+      jersey_number: jerseyNumber ? parseInt(jerseyNumber) : null,
+      position: position.trim() || null,
+      status,
+    }).eq('id', athlete.id);
+    setSaving(false);
+    onSaved();
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Edit Athlete"
+      footer={
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={!name.trim() || !dateOfBirth || saving}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <Label>Name</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Athlete name" autoFocus />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Date of birth</Label>
+            <Input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
+          </div>
+          <div>
+            <Label>Gender</Label>
+            <Select value={gender} onChange={(e) => setGender(e.target.value as AthleteGender)}>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </Select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Jersey number (optional)</Label>
+            <Input type="number" min={0} value={jerseyNumber} onChange={(e) => setJerseyNumber(e.target.value)} placeholder="e.g. 10" />
+          </div>
+          <div>
+            <Label>Position (optional)</Label>
+            <Input value={position} onChange={(e) => setPosition(e.target.value)} placeholder="e.g. Defender" />
+          </div>
+        </div>
+        <div>
+          <Label>Status</Label>
+          <Select value={status} onChange={(e) => setStatus(e.target.value as AthleteStatus)}>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </Select>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -292,11 +404,7 @@ function RosterModal({
                   <div className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${
                     selected ? 'bg-ink-900 border-ink-900' : 'border-ink-300'
                   }`}>
-                    {selected && (
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                        <path d="M2 6L5 9L10 3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
+                    {selected && <Check size={12} className="text-white" />}
                   </div>
                   <span className="text-sm text-ink-700 flex-1">{a.name}</span>
                   {a.jersey_number !== null && <span className="text-xs text-ink-400">#{a.jersey_number}</span>}
@@ -321,12 +429,21 @@ function AddSessionModal({
   teamId: string;
   onSaved: () => void;
 }) {
+  const [type, setType] = useState<EventType>('training');
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(formatDateInput(new Date()));
   const [time, setTime] = useState('18:30');
   const [location, setLocation] = useState('');
   const [objectives, setObjectives] = useState('');
+  const [opponent, setOpponent] = useState('');
+  const [competition, setCompetition] = useState('');
+  const [trainingType, setTrainingType] = useState('');
+  const [duration, setDuration] = useState('');
+  const [notes, setNotes] = useState('');
+  const [topic, setTopic] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const cfg = EVENT_TYPE_CONFIG[type];
 
   const handleSave = async () => {
     if (!title.trim()) return;
@@ -339,8 +456,15 @@ function AddSessionModal({
       date,
       time,
       location: location.trim() || null,
-      objectives: objectives.trim() || null,
+      objectives: type === 'training' || type === 'gym' || type === 'video' ? (objectives.trim() || null) : null,
       status: 'planned',
+      event_type: type,
+      opponent: type === 'match' ? (opponent.trim() || null) : null,
+      competition: type === 'match' ? (competition.trim() || null) : null,
+      training_type: type === 'training' ? (trainingType.trim() || null) : null,
+      duration_minutes: (type === 'training' || type === 'gym' || type === 'video') && duration ? parseInt(duration) : null,
+      notes: type === 'gym' ? (notes.trim() || null) : null,
+      topic: type === 'video' ? (topic.trim() || null) : null,
       week_number: isoWeek.week,
       week_year: isoWeek.year,
     });
@@ -352,17 +476,39 @@ function AddSessionModal({
     <Modal
       open
       onClose={onClose}
-      title="New Training Session"
+      title="New Session"
       footer={
         <>
           <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
           <Button size="sm" onClick={handleSave} disabled={!title.trim() || saving}>
-            {saving ? 'Saving…' : 'Create session'}
+            {saving ? 'Saving…' : `Create ${cfg.label.toLowerCase()}`}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
+        {/* Event type selector */}
+        <div className="grid grid-cols-4 gap-2">
+          {EVENT_TYPES.map((t) => {
+            const c = EVENT_TYPE_CONFIG[t];
+            const Icon = c.icon;
+            return (
+              <button
+                key={t}
+                onClick={() => setType(t)}
+                className={`flex flex-col items-center gap-1 px-2 py-2.5 rounded-lg border text-xs font-medium transition-all ${
+                  type === t
+                    ? `border-ink-300 ${c.bg} ${c.color}`
+                    : 'border-ink-200 text-ink-500 hover:border-ink-300'
+                }`}
+              >
+                <Icon size={16} />
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+
         <div>
           <Label>Session title</Label>
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Tática Ofensiva" autoFocus />
@@ -377,13 +523,72 @@ function AddSessionModal({
             <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </div>
         </div>
+
+        {/* Type-specific fields */}
+        {(type === 'training' || type === 'gym' || type === 'video') && (
+          <div>
+            <Label>Objective</Label>
+            <Textarea rows={2} value={objectives} onChange={(e) => setObjectives(e.target.value)} placeholder="What should this session achieve?" />
+          </div>
+        )}
+
+        {type === 'training' && (
+          <>
+            <div>
+              <Label>Training Type</Label>
+              <Input value={trainingType} onChange={(e) => setTrainingType(e.target.value)} placeholder="e.g. Tactical, Physical, Technical" />
+            </div>
+            <div>
+              <Label>Duration (min)</Label>
+              <Input type="number" min={1} value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="e.g. 90" />
+            </div>
+          </>
+        )}
+
+        {type === 'match' && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Opponent</Label>
+                <Input value={opponent} onChange={(e) => setOpponent(e.target.value)} placeholder="e.g. FC Rivals" />
+              </div>
+              <div>
+                <Label>Competition</Label>
+                <Input value={competition} onChange={(e) => setCompetition(e.target.value)} placeholder="e.g. League, Cup" />
+              </div>
+            </div>
+          </>
+        )}
+
+        {type === 'gym' && (
+          <>
+            <div>
+              <Label>Duration (min)</Label>
+              <Input type="number" min={1} value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="e.g. 60" />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Strength focus, exercises, loads…" />
+            </div>
+          </>
+        )}
+
+        {type === 'video' && (
+          <>
+            <div>
+              <Label>Topic</Label>
+              <Input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. Opponent analysis, Set pieces" />
+            </div>
+            <div>
+              <Label>Duration (min)</Label>
+              <Input type="number" min={1} value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="e.g. 45" />
+            </div>
+          </>
+        )}
+
         <div>
           <Label>Location</Label>
           <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Campo Principal" />
-        </div>
-        <div>
-          <Label>Objectives</Label>
-          <Textarea rows={3} value={objectives} onChange={(e) => setObjectives(e.target.value)} placeholder="What should this session achieve?" />
         </div>
       </div>
     </Modal>

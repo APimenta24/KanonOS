@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 export type Route =
   | { name: 'workspace' }
-  | { name: 'planning' }
-  | { name: 'planning-week'; year: number; week: number }
+  | { name: 'planning'; year: number; week: number }
   | { name: 'athletes' }
   | { name: 'teams' }
   | { name: 'team'; teamId: string }
@@ -16,8 +15,8 @@ export function parseHash(): Route {
   const parts = hash.split('/').filter(Boolean);
 
   if (parts.length === 0) return { name: 'workspace' };
-  if (parts[0] === 'planning' && parts.length === 1) return { name: 'planning' };
-  if (parts[0] === 'planning' && parts.length === 3) return { name: 'planning-week', year: parseInt(parts[1]), week: parseInt(parts[2]) };
+  if (parts[0] === 'planning' && parts.length === 3) return { name: 'planning', year: parseInt(parts[1]), week: parseInt(parts[2]) };
+  if (parts[0] === 'planning') return { name: 'planning', year: new Date().getFullYear(), week: 0 };
   if (parts[0] === 'athletes') return { name: 'athletes' };
   if (parts[0] === 'teams' && parts.length === 1) return { name: 'teams' };
   if (parts[0] === 'teams' && parts.length === 2) return { name: 'team', teamId: parts[1] };
@@ -32,8 +31,7 @@ export function navigate(route: Route) {
   let hash = '#/';
   switch (route.name) {
     case 'workspace': hash = '#/'; break;
-    case 'planning': hash = '#/planning'; break;
-    case 'planning-week': hash = `#/planning/${route.year}/${route.week}`; break;
+    case 'planning': hash = `#/planning/${route.year}/${route.week}`; break;
     case 'athletes': hash = '#/athletes'; break;
     case 'teams': hash = '#/teams'; break;
     case 'team': hash = `#/teams/${route.teamId}`; break;

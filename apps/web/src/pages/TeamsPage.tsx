@@ -5,7 +5,7 @@ import { useNavigate } from '../lib/router';
 import { LoadingState, EmptyState } from '../components/ui/States';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Input, Label } from '../components/ui/Form';
+import { Input, Label, Select } from '../components/ui/Form';
 
 const TEAM_COLORS = ['#3B82F6', '#14B8A6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#10B981', '#F97316'];
 
@@ -80,7 +80,7 @@ export function TeamsPage() {
                 onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === team.id ? null : team.id); }}
                 className="absolute top-3 right-3 w-7 h-7 rounded-md hover:bg-ink-100 flex items-center justify-center text-ink-400 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <MoreHorizontal size={15} />
+                <MoreHorizontal size={14} />
               </button>
               {menuOpen === team.id && (
                 <div className="absolute top-11 right-3 z-10 bg-white rounded-lg shadow-floating border border-ink-100 py-1 animate-scale-in">
@@ -181,13 +181,12 @@ function AddTeamModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>Age category</Label>
-            <select
+            <Select
               value={ageCategory}
               onChange={(e) => setAgeCategory(e.target.value)}
-              className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 focus:border-ink-400 focus:ring-2 focus:ring-ink-100 focus:outline-none transition-all"
             >
               {AGE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            </Select>
           </div>
           <div>
             <Label>Season (optional)</Label>

@@ -53,6 +53,7 @@ export type TeamAthlete = {
 };
 
 export type SessionStatus = 'planned' | 'in_progress' | 'completed' | 'cancelled';
+export type EventType = 'training' | 'match' | 'gym' | 'video';
 
 export type TrainingSession = {
   id: string;
@@ -63,6 +64,13 @@ export type TrainingSession = {
   location: string | null;
   objectives: string | null;
   status: SessionStatus;
+  event_type: EventType;
+  opponent: string | null;
+  training_type: string | null;
+  duration_minutes: number | null;
+  competition: string | null;
+  notes: string | null;
+  topic: string | null;
   week_number: number;
   week_year: number;
   created_at: string;
@@ -94,6 +102,29 @@ export type SessionReview = {
   notes: string | null;
   highlights: string | null;
   next_actions: string | null;
+  objective_achieved: ObjectiveAchieved | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AttendanceStatus = 'present' | 'absent' | 'justified';
+export type ObjectiveAchieved = 'yes' | 'partial' | 'no';
+
+export type SessionAttendance = {
+  id: string;
+  session_id: string;
+  athlete_id: string;
+  status: AttendanceStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AthleteSessionReview = {
+  id: string;
+  session_id: string;
+  athlete_id: string;
+  rating: number;
+  note: string | null;
   created_at: string;
   updated_at: string;
 };

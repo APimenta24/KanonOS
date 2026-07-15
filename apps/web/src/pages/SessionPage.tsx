@@ -4,10 +4,10 @@ import {
   ChevronRight, ClipboardList, CheckCircle2, Pencil, Copy, Package,
   LayoutGrid
 } from 'lucide-react';
-import { supabase, type TrainingSession, type Exercise, type ExerciseCategory, type Team, type SessionReview, type SessionStatus } from '../lib/supabase';
+import { supabase, type TrainingSession, type Exercise, type ExerciseCategory, type Team, type SessionReview, type SessionStatus, type EventType } from '../lib/supabase';
 import { useNavigate } from '../lib/router';
 import { formatDateLong, getISOWeek } from '../lib/date';
-import { STATUS_CONFIG, CATEGORY_CONFIG, STATUS_ORDER, statusToIndex } from '../lib/constants';
+import { STATUS_CONFIG, CATEGORY_CONFIG, STATUS_ORDER, statusToIndex, EVENT_TYPE_CONFIG, EVENT_TYPES } from '../lib/constants';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui/States';
 import { Button, IconButton } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -140,7 +140,7 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
     if (!session) return;
     await supabase.from('training_sessions').delete().eq('id', session.id);
     const { week, year } = getISOWeek(new Date(session.date));
-    navigate({ name: 'planning-week', year, week });
+    navigate({ name: 'planning', year, week });
   };
 
   if (loading) return <LoadingState />;
@@ -150,6 +150,9 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
   const totalDuration = exercises.reduce((sum, e) => sum + e.duration_minutes, 0);
   const hasReview = review !== null;
   const currentStatusIdx = statusToIndex(session.status);
+  const evType = EVENT_TYPE_CONFIG[session.event_type];
+  const TypeIcon = evType.icon;
+  const isTraining = session.event_type === 'training';
 
   return (
     <div className="space-y-6">
@@ -158,7 +161,7 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
         <div className="flex items-center gap-4">
           <IconButton onClick={() => {
             const { week, year } = getISOWeek(new Date(session.date));
-            navigate({ name: 'planning-week', year, week });
+            navigate({ name: 'planning', year, week });
           }} aria-label="Back">
             <ArrowLeft size={18} />
           </IconButton>
@@ -166,9 +169,16 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
             <div className="flex items-center gap-2 mb-1">
               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: team?.color || '#D4D4D8' }} />
               <span className="text-xs text-ink-400">{team?.name}</span>
+              <span className="text-ink-200">·</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${evType.bg} ${evType.color} flex items-center gap-1`}>
+                <TypeIcon size={10} /> {evType.label}
+              </span>
+              {session.event_type === 'match' && session.opponent && (
+                <span className="text-xs text-ink-400">vs {session.opponent}</span>
+              )}
             </div>
             <h1 className="text-2xl font-bold text-ink-900">{session.title}</h1>
-            <p className="text-sm text-ink-400 mt-0.5">{formatDateLong(session.date)}</p>
+            <p className="text-sm text-ink-500 mt-0.5">{formatDateLong(session.date)}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -180,11 +190,11 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
           </Button>
           {hasReview ? (
             <Button size="sm" onClick={() => navigate({ name: 'review', sessionId: session.id })}>
-              <ClipboardList size={14} /> View review
+              <ClipboardList size={14} /> View close
             </Button>
           ) : (
             <Button size="sm" onClick={() => navigate({ name: 'review', sessionId: session.id })}>
-              <Plus size={14} /> Add review
+              <Plus size={14} /> Close session
             </Button>
           )}
         </div>
@@ -224,7 +234,7 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
         </div>
       </div>
 
-      {/* Session info */}
+      {/* Session info — type-specific fields */}
       <div className="bg-white rounded-xl border border-ink-100 p-5 space-y-4">
         <div className="grid grid-cols-3 gap-6">
           <div>
@@ -242,117 +252,146 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
           <div>
             <Label>Duration</Label>
             <div className="flex items-center gap-2 text-sm text-ink-700">
-              <Clock size={14} className="text-ink-400" /> {totalDuration} min
+              <Clock size={14} className="text-ink-400" /> {session.duration_minutes ? `${session.duration_minutes} min` : `${totalDuration} min`}
             </div>
           </div>
         </div>
+
         {session.objectives && (
           <div>
-            <Label>Objectives</Label>
+            <Label>Objective</Label>
             <div className="flex items-start gap-2 text-sm text-ink-700">
               <Target size={14} className="text-ink-400 mt-0.5 flex-shrink-0" />
               <p>{session.objectives}</p>
             </div>
           </div>
         )}
-      </div>
 
-      {/* Exercises */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-ink-900">Exercises</h2>
-            <span className="text-xs text-ink-400">{exercises.length} · {totalDuration} min</span>
+        {isTraining && session.training_type && (
+          <div>
+            <Label>Training Type</Label>
+            <p className="text-sm text-ink-700">{session.training_type}</p>
           </div>
-          <Button size="sm" variant="secondary" onClick={() => setShowAddExercise(true)}>
-            <Plus size={14} /> Add exercise
-          </Button>
-        </div>
+        )}
 
-        {exercises.length === 0 ? (
-          <EmptyState
-            icon={<ClipboardList size={36} />}
-            title="No exercises yet"
-            description="Add exercises to structure your training session. Drag to reorder."
-            action={<Button size="sm" onClick={() => setShowAddExercise(true)}><Plus size={14} /> Add exercise</Button>}
-          />
-        ) : (
-          <div className="space-y-2">
-            {exercises.map((ex, i) => {
-              const cat = CATEGORY_CONFIG[ex.category];
-              const isDragging = dragIndex === i;
-              const isDragOver = dragOverIndex === i && dragIndex !== null && dragIndex !== i;
+        {session.event_type === 'match' && session.competition && (
+          <div>
+            <Label>Competition</Label>
+            <p className="text-sm text-ink-700">{session.competition}</p>
+          </div>
+        )}
 
-              return (
-                <div
-                  key={ex.id}
-                  draggable
-                  onDragStart={() => handleDragStart(i)}
-                  onDragOver={(e) => handleDragOver(e, i)}
-                  onDrop={(e) => handleDrop(e, i)}
-                  onDragEnd={handleDragEnd}
-                  className={`group bg-white rounded-xl border p-4 transition-all ${
-                    isDragging ? 'opacity-40 border-ink-300 scale-[0.99]' :
-                    isDragOver ? 'border-accent-400 border-t-2' :
-                    'border-ink-100 hover:border-ink-200'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    {/* Drag handle + number */}
-                    <div className="flex flex-col items-center gap-1 pt-0.5 cursor-grab active:cursor-grabbing">
-                      <GripVertical size={14} className="text-ink-300 group-hover:text-ink-400 transition-colors" />
-                      <span className="text-xs font-bold text-ink-300">{i + 1}</span>
-                    </div>
+        {session.event_type === 'gym' && session.notes && (
+          <div>
+            <Label>Notes</Label>
+            <div className="flex items-start gap-2 text-sm text-ink-700">
+              <ClipboardList size={14} className="text-ink-400 mt-0.5 flex-shrink-0" />
+              <p>{session.notes}</p>
+            </div>
+          </div>
+        )}
 
-                    {/* Card content */}
-                    <div className="flex-1 min-w-0">
-                      {/* Title row */}
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="text-sm font-semibold text-ink-900">{ex.name}</h3>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${cat.bg} ${cat.color}`}>
-                          {cat.label}
-                        </span>
-                        <span className="flex items-center gap-1 text-[10px] text-ink-400 ml-auto">
-                          <Clock size={10} /> {ex.duration_minutes} min
-                        </span>
-                      </div>
-
-                      {/* Detail fields */}
-                      <div className="space-y-1.5">
-                        {ex.objective && (
-                          <DetailLine icon={<Target size={11} />} label="Objective" value={ex.objective} />
-                        )}
-                        {ex.description && (
-                          <DetailLine icon={<ClipboardList size={11} />} label="Description" value={ex.description} />
-                        )}
-                        {ex.equipment && (
-                          <DetailLine icon={<Package size={11} />} label="Equipment" value={ex.equipment} />
-                        )}
-                        {ex.logistics && (
-                          <DetailLine icon={<LayoutGrid size={11} />} label="Logistics" value={ex.logistics} />
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <IconButton onClick={() => setEditingExercise(ex)} className="w-7 h-7" aria-label="Edit exercise">
-                        <Pencil size={13} />
-                      </IconButton>
-                      <IconButton onClick={() => handleDuplicateExercise(ex)} className="w-7 h-7" aria-label="Duplicate exercise">
-                        <Copy size={13} />
-                      </IconButton>
-                      <IconButton onClick={() => setShowDeleteExercise(ex)} className="w-7 h-7" aria-label="Delete exercise">
-                        <Trash2 size={13} className="text-red-500" />
-                      </IconButton>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+        {session.event_type === 'video' && session.topic && (
+          <div>
+            <Label>Topic</Label>
+            <p className="text-sm text-ink-700">{session.topic}</p>
           </div>
         )}
       </div>
+
+      {/* Exercises — only for training sessions */}
+      {isTraining && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-ink-900">Exercises</h2>
+              <span className="text-xs text-ink-400">{exercises.length} · {totalDuration} min</span>
+            </div>
+            <Button size="sm" variant="secondary" onClick={() => setShowAddExercise(true)}>
+              <Plus size={14} /> Add exercise
+            </Button>
+          </div>
+
+          {exercises.length === 0 ? (
+            <EmptyState
+              icon={<ClipboardList size={40} />}
+              title="No exercises yet"
+              description="Add exercises to structure your training session. Drag to reorder."
+              action={<Button size="sm" onClick={() => setShowAddExercise(true)}><Plus size={14} /> Add exercise</Button>}
+            />
+          ) : (
+            <div className="space-y-2">
+              {exercises.map((ex, i) => {
+                const cat = CATEGORY_CONFIG[ex.category];
+                const isDragging = dragIndex === i;
+                const isDragOver = dragOverIndex === i && dragIndex !== null && dragIndex !== i;
+
+                return (
+                  <div
+                    key={ex.id}
+                    draggable
+                    onDragStart={() => handleDragStart(i)}
+                    onDragOver={(e) => handleDragOver(e, i)}
+                    onDrop={(e) => handleDrop(e, i)}
+                    onDragEnd={handleDragEnd}
+                    className={`group bg-white rounded-xl border p-4 transition-all ${
+                      isDragging ? 'opacity-40 border-ink-300 scale-[0.99]' :
+                      isDragOver ? 'border-accent-400 border-t-2' :
+                      'border-ink-100 hover:border-ink-200'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex flex-col items-center gap-1 pt-0.5 cursor-grab active:cursor-grabbing">
+                        <GripVertical size={14} className="text-ink-300 group-hover:text-ink-400 transition-colors" />
+                        <span className="text-xs font-bold text-ink-300">{i + 1}</span>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="text-sm font-semibold text-ink-900">{ex.name}</h3>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${cat.bg} ${cat.color}`}>
+                            {cat.label}
+                          </span>
+                          <span className="flex items-center gap-1 text-[10px] text-ink-400 ml-auto">
+                            <Clock size={10} /> {ex.duration_minutes} min
+                          </span>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          {ex.objective && (
+                            <DetailLine icon={<Target size={11} />} label="Objective" value={ex.objective} />
+                          )}
+                          {ex.description && (
+                            <DetailLine icon={<ClipboardList size={11} />} label="Description" value={ex.description} />
+                          )}
+                          {ex.equipment && (
+                            <DetailLine icon={<Package size={11} />} label="Equipment" value={ex.equipment} />
+                          )}
+                          {ex.logistics && (
+                            <DetailLine icon={<LayoutGrid size={11} />} label="Logistics" value={ex.logistics} />
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <IconButton onClick={() => setEditingExercise(ex)} className="w-7 h-7" aria-label="Edit exercise">
+                          <Pencil size={13} />
+                        </IconButton>
+                        <IconButton onClick={() => handleDuplicateExercise(ex)} className="w-7 h-7" aria-label="Duplicate exercise">
+                          <Copy size={13} />
+                        </IconButton>
+                        <IconButton onClick={() => setShowDeleteExercise(ex)} className="w-7 h-7" aria-label="Delete exercise">
+                          <Trash2 size={13} className="text-red-500" />
+                        </IconButton>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Modals */}
       {showAddExercise && (
@@ -494,12 +533,10 @@ function ExerciseModal({
           <Label>Exercise name</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rondo 5v2" autoFocus />
         </div>
-
         <div>
           <Label>Objective</Label>
           <Input value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="e.g. Improve quick decision-making under pressure" />
         </div>
-
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>Type</Label>
@@ -515,17 +552,14 @@ function ExerciseModal({
             <Input type="number" min={1} value={duration} onChange={(e) => setDuration(parseInt(e.target.value) || 15)} />
           </div>
         </div>
-
         <div>
           <Label>Description</Label>
           <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Notes on setup, coaching points, progression…" />
         </div>
-
         <div>
           <Label>Equipment</Label>
           <Input value={equipment} onChange={(e) => setEquipment(e.target.value)} placeholder="e.g. 10 cones, 4 balls, 2 bibs" />
         </div>
-
         <div>
           <Label>Logistics</Label>
           <Textarea rows={2} value={logistics} onChange={(e) => setLogistics(e.target.value)} placeholder="e.g. Half pitch, groups of 4, 2 minutes rest between sets" />
@@ -544,11 +578,18 @@ function EditSessionModal({
   session: TrainingSession;
   onSaved: () => void;
 }) {
+  const [type, setType] = useState<EventType>(session.event_type);
   const [title, setTitle] = useState(session.title);
   const [date, setDate] = useState(session.date);
   const [time, setTime] = useState(session.time);
   const [location, setLocation] = useState(session.location || '');
   const [objectives, setObjectives] = useState(session.objectives || '');
+  const [opponent, setOpponent] = useState(session.opponent || '');
+  const [competition, setCompetition] = useState(session.competition || '');
+  const [trainingType, setTrainingType] = useState(session.training_type || '');
+  const [duration, setDuration] = useState(session.duration_minutes?.toString() || '');
+  const [notes, setNotes] = useState(session.notes || '');
+  const [topic, setTopic] = useState(session.topic || '');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -561,7 +602,14 @@ function EditSessionModal({
       date,
       time,
       location: location.trim() || null,
-      objectives: objectives.trim() || null,
+      objectives: type === 'training' || type === 'gym' || type === 'video' ? (objectives.trim() || null) : null,
+      event_type: type,
+      opponent: type === 'match' ? (opponent.trim() || null) : null,
+      competition: type === 'match' ? (competition.trim() || null) : null,
+      training_type: type === 'training' ? (trainingType.trim() || null) : null,
+      duration_minutes: (type === 'training' || type === 'gym' || type === 'video') && duration ? parseInt(duration) : null,
+      notes: type === 'gym' ? (notes.trim() || null) : null,
+      topic: type === 'video' ? (topic.trim() || null) : null,
       week_number: isoWeek.week,
       week_year: isoWeek.year,
       updated_at: new Date().toISOString(),
@@ -585,6 +633,28 @@ function EditSessionModal({
       }
     >
       <div className="space-y-4">
+        {/* Event type selector */}
+        <div className="grid grid-cols-4 gap-2">
+          {EVENT_TYPES.map((t) => {
+            const c = EVENT_TYPE_CONFIG[t];
+            const Icon = c.icon;
+            return (
+              <button
+                key={t}
+                onClick={() => setType(t)}
+                className={`flex flex-col items-center gap-1 px-2 py-2.5 rounded-lg border text-xs font-medium transition-all ${
+                  type === t
+                    ? `border-ink-300 ${c.bg} ${c.color}`
+                    : 'border-ink-200 text-ink-500 hover:border-ink-300'
+                }`}
+              >
+                <Icon size={16} />
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+
         <div>
           <Label>Session title</Label>
           <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
@@ -599,13 +669,72 @@ function EditSessionModal({
             <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </div>
         </div>
+
+        {/* Type-specific fields */}
+        {(type === 'training' || type === 'gym' || type === 'video') && (
+          <div>
+            <Label>Objective</Label>
+            <Textarea rows={2} value={objectives} onChange={(e) => setObjectives(e.target.value)} placeholder="What should this session achieve?" />
+          </div>
+        )}
+
+        {type === 'training' && (
+          <>
+            <div>
+              <Label>Training Type</Label>
+              <Input value={trainingType} onChange={(e) => setTrainingType(e.target.value)} placeholder="e.g. Tactical, Physical, Technical" />
+            </div>
+            <div>
+              <Label>Duration (min)</Label>
+              <Input type="number" min={1} value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="e.g. 90" />
+            </div>
+          </>
+        )}
+
+        {type === 'match' && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Opponent</Label>
+                <Input value={opponent} onChange={(e) => setOpponent(e.target.value)} placeholder="e.g. FC Rivals" />
+              </div>
+              <div>
+                <Label>Competition</Label>
+                <Input value={competition} onChange={(e) => setCompetition(e.target.value)} placeholder="e.g. League, Cup" />
+              </div>
+            </div>
+          </>
+        )}
+
+        {type === 'gym' && (
+          <>
+            <div>
+              <Label>Duration (min)</Label>
+              <Input type="number" min={1} value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="e.g. 60" />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Strength focus, exercises, loads…" />
+            </div>
+          </>
+        )}
+
+        {type === 'video' && (
+          <>
+            <div>
+              <Label>Topic</Label>
+              <Input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. Opponent analysis, Set pieces" />
+            </div>
+            <div>
+              <Label>Duration (min)</Label>
+              <Input type="number" min={1} value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="e.g. 45" />
+            </div>
+          </>
+        )}
+
         <div>
           <Label>Location</Label>
           <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Campo Principal" />
-        </div>
-        <div>
-          <Label>Objectives</Label>
-          <Textarea rows={3} value={objectives} onChange={(e) => setObjectives(e.target.value)} placeholder="What should this session achieve?" />
         </div>
       </div>
     </Modal>

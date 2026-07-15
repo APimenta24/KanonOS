@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Clock, MapPin, Star, ArrowRight, Filter, History as HistoryIcon } from 'lucide-react';
 import { supabase, type SessionWithTeam, type SessionReview, type Team } from '../lib/supabase';
 import { useNavigate } from '../lib/router';
-import { STATUS_CONFIG } from '../lib/constants';
+import { STATUS_CONFIG, EVENT_TYPE_CONFIG } from '../lib/constants';
 import { LoadingState, EmptyState } from '../components/ui/States';
 import { Select } from '../components/ui/Form';
 
@@ -49,21 +49,21 @@ export function HistoryPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-ink-900">History</h1>
-        <p className="text-sm text-ink-500 mt-1">All your training sessions, chronologically.</p>
+        <p className="text-sm text-ink-500 mt-1">All your sessions, chronologically.</p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-ink-100 p-4">
-          <p className="text-xs text-ink-400 mb-1">Total sessions</p>
+          <p className="text-xs font-medium text-ink-400 mb-1">Total sessions</p>
           <p className="text-2xl font-bold text-ink-900">{sessions.length}</p>
         </div>
         <div className="bg-white rounded-xl border border-ink-100 p-4">
-          <p className="text-xs text-ink-400 mb-1">Reviewed</p>
+          <p className="text-xs font-medium text-ink-400 mb-1">Reviewed</p>
           <p className="text-2xl font-bold text-ink-900">{reviewedCount}</p>
         </div>
         <div className="bg-white rounded-xl border border-ink-100 p-4">
-          <p className="text-xs text-ink-400 mb-1">Avg. quality</p>
+          <p className="text-xs font-medium text-ink-400 mb-1">Avg. quality</p>
           <div className="flex items-baseline gap-1">
             <p className="text-2xl font-bold text-ink-900">{avgQuality}</p>
             {avgQuality !== '—' && <span className="text-xs text-ink-400">/ 5</span>}
@@ -103,6 +103,8 @@ export function HistoryPage() {
           {filtered.map((session) => {
             const status = STATUS_CONFIG[session.status];
             const review = reviews.get(session.id);
+            const evType = EVENT_TYPE_CONFIG[session.event_type];
+            const TypeIcon = evType.icon;
             return (
               <button
                 key={session.id}
@@ -118,9 +120,15 @@ export function HistoryPage() {
                     {new Date(session.date).toLocaleDateString('en-GB', { month: 'short' })}
                   </span>
                 </div>
-                <div className="w-1 h-12 rounded-full" style={{ backgroundColor: session.team?.color || '#D4D4D8' }} />
+                <div className={`w-1 h-10 rounded-full ${evType.dot}`} />
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-ink-900 truncate">{session.title}</h3>
+                  <div className="flex items-center gap-2">
+                    <TypeIcon size={12} className={`${evType.color} flex-shrink-0`} />
+                    <h3 className="text-sm font-semibold text-ink-900 truncate">{session.title}</h3>
+                    {session.event_type === 'match' && session.opponent && (
+                      <span className="text-xs text-ink-400">vs {session.opponent}</span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-3 mt-1 text-xs text-ink-400">
                     <span>{session.team?.name}</span>
                     <span className="flex items-center gap-1"><Clock size={11} /> {session.time}</span>

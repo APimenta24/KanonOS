@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { LayoutGrid, CalendarDays, Users, UserCircle, History, Activity } from 'lucide-react';
 import { useRoute, useNavigate, type Route } from '../lib/router';
+import { getISOWeek } from '../lib/date';
 
 interface NavItem {
   label: string;
@@ -11,7 +12,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Workspace', icon: LayoutGrid, route: { name: 'workspace' }, match: (r) => r.name === 'workspace' },
-  { label: 'Planning', icon: CalendarDays, route: { name: 'planning' }, match: (r) => r.name === 'planning' || r.name === 'planning-week' },
+  { label: 'Planning', icon: CalendarDays, route: (() => { const { week, year } = getISOWeek(new Date()); return { name: 'planning', year, week }; })(), match: (r) => r.name === 'planning' },
   { label: 'Athletes', icon: UserCircle, route: { name: 'athletes' }, match: (r) => r.name === 'athletes' },
   { label: 'Teams', icon: Users, route: { name: 'teams' }, match: (r) => r.name === 'teams' || r.name === 'team' },
   { label: 'History', icon: History, route: { name: 'history' }, match: (r) => r.name === 'history' },

@@ -131,7 +131,7 @@ export function AthletesPage() {
                   onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === athlete.id ? null : athlete.id); }}
                   className="absolute top-3 right-3 w-7 h-7 rounded-md hover:bg-ink-100 flex items-center justify-center text-ink-400 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
-                  <MoreHorizontal size={15} />
+                  <MoreHorizontal size={14} />
                 </button>
                 {menuOpen === athlete.id && (
                   <div className="absolute top-11 right-3 z-10 bg-white rounded-lg shadow-floating border border-ink-100 py-1 animate-scale-in">
