@@ -1,260 +1,282 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Users, Trash2, MoreHorizontal, Search, Check } from 'lucide-react';
-import { supabase, type Team, type Athlete } from '../lib/supabase';
-import { useNavigate } from '../lib/router';
-import { LoadingState, EmptyState } from '../components/ui/States';
-import { Button } from '../components/ui/Button';
-import { Modal } from '../components/ui/Modal';
-import { Input, Label, Select } from '../components/ui/Form';
+import { supabase, type Team } from '../lib/supabase';
+import { useAuth } from '../lib/auth';
+import { useWorkingContext } from '../lib/working-context';
+import { Plus, Users, X, Pencil, Trash2 } from 'lucide-react';
 
-const TEAM_COLORS = ['#3B82F6', '#14B8A6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#10B981', '#F97316'];
-
-const AGE_CATEGORIES = ['U-13', 'U-15', 'U-17', 'U-19', 'U-21', 'Senior'];
+const SPORTS = ['Futebol', 'Basketball', 'Volleyball', 'Handball', 'Rugby', 'Athletics', 'Other'];
+const AGE_CATEGORIES = ['Sub-13', 'Sub-15', 'Sub-17', 'Sub-19', 'Senior', 'Other'];
+const TEAM_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
 
 export function TeamsPage() {
-  const navigate = useNavigate();
-  const [teams, setTeams] = useState<Team[]>([]);
+  const { user, workspace } = useAuth();
+  const { teams, setTeamId, refresh } = useWorkingContext();
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editTeam, setEditTeam] = useState<Team | null>(null);
+  const [name, setName] = useState('');
+  const [sport, setSport] = useState('Futebol');
+  const [ageCategory, setAgeCategory] = useState('Sub-17');
+  const [color, setColor] = useState('#3B82F6');
+  const [season, setSeason] = useState('2024/25');
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const loadTeams = useCallback(async () => {
-    const { data } = await supabase.from('teams').select('*').order('created_at', { ascending: true });
-    setTeams(data || []);
+  const load = useCallback(async () => {
+    await refresh();
     setLoading(false);
-  }, []);
+  }, [refresh]);
 
   useEffect(() => {
-    loadTeams();
-  }, [loadTeams]);
+    load();
+  }, [load]);
 
-  const handleDelete = async (teamId: string) => {
-    await supabase.from('teams').delete().eq('id', teamId);
-    setMenuOpen(null);
-    loadTeams();
+  const resetForm = () => {
+    setName('');
+    setSport('Futebol');
+    setAgeCategory('Sub-17');
+    setColor('#3B82F6');
+    setSeason('2024/25');
+    setError(null);
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setError(null);
+    setCreating(true);
+    const { error } = await supabase.from('teams').insert({
+      name,
+      sport,
+      age_category: ageCategory,
+      color,
+      season,
+      head_coach_id: user.id,
+      workspace_id: workspace?.id || null,
+      athlete_count: 0,
+    });
+    setCreating(false);
+    if (error) {
+      setError(error.message);
+    } else {
+      setShowCreate(false);
+      resetForm();
+      await refresh();
+    }
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTeam) return;
+    setSaving(true);
+    setError(null);
+
+    const { error } = await supabase.from('teams').update({
+      name,
+      sport,
+      age_category: ageCategory,
+      color,
+      season,
+    }).eq('id', editTeam.id);
+
+    if (error) {
+      setSaving(false);
+      setError(error.message);
+      return;
+    }
+
+    setSaving(false);
+    setEditTeam(null);
+    resetForm();
+    await refresh();
+  };
+
+  const handleDelete = async (teamToDelete: Team) => {
+    const { error } = await supabase.from('teams').delete().eq('id', teamToDelete.id);
+    if (error) { setError(error.message); return; }
+    await refresh();
+  };
+
+  const openEdit = (t: Team) => {
+    setEditTeam(t);
+    setName(t.name);
+    setSport(t.sport);
+    setAgeCategory(t.age_category || 'Sub-17');
+    setColor(t.color);
+    setSeason(t.season);
+    setError(null);
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div>
+      <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-ink-900">Teams</h1>
-          <p className="text-sm text-ink-500 mt-1">Manage your training groups.</p>
+          <h1 className="text-2xl font-semibold text-ink-800">Teams</h1>
+          <p className="mt-1 text-sm text-ink-500">Manage your teams within the active workspace.</p>
         </div>
-        <Button size="sm" onClick={() => setShowAddModal(true)}>
-          <Plus size={15} /> New team
-        </Button>
+        <button
+          onClick={() => { setShowCreate(true); resetForm(); }}
+          className="flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700 transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+          New Team
+        </button>
       </div>
 
-      {loading ? (
-        <LoadingState />
-      ) : teams.length === 0 ? (
-        <EmptyState
-          icon={<Users size={40} />}
-          title="No teams yet"
-          description="Create your first team to start planning training sessions."
-          action={<Button onClick={() => setShowAddModal(true)}><Plus size={15} /> Create team</Button>}
-        />
-      ) : (
-        <div className="grid grid-cols-3 gap-4">
-          {teams.map((team) => (
-            <div key={team.id} className="relative group bg-white rounded-xl border border-ink-100 p-5 hover:border-ink-300 hover:shadow-card-hover transition-all">
-              <button onClick={() => navigate({ name: 'team', teamId: team.id })} className="text-left w-full">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: team.color }}>
-                    {team.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold text-ink-900 truncate">{team.name}</h3>
-                    <p className="text-xs text-ink-400">
-                      {team.age_category || '—'}
-                      {team.season ? ` · ${team.season}` : ''}
-                    </p>
-                  </div>
+      {error && (
+        <div className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {loading && <div className="text-sm text-ink-400">Loading teams...</div>}
+
+      {!loading && teams.length === 0 && (
+        <div className="rounded-xl border border-ink-200 bg-white p-8 text-center">
+          <Users className="mx-auto mb-3 h-8 w-8 text-ink-300" />
+          <p className="text-sm text-ink-500">No teams yet. Create your first team to get started.</p>
+        </div>
+      )}
+
+      {!loading && teams.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {teams.map((t) => (
+            <div
+              key={t.id}
+              className="group rounded-xl border border-ink-200 bg-white p-4 hover:border-ink-300 transition-colors cursor-pointer"
+              onClick={() => setTeamId(t.id)}
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg text-white text-sm font-bold" style={{ backgroundColor: t.color }}>
+                  {t.name.charAt(0).toUpperCase()}
                 </div>
-                <div className="flex items-center gap-4 text-xs text-ink-400">
-                  <span>{team.athlete_count} athletes</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-ink-800 truncate">{t.name}</p>
+                  <p className="text-xs text-ink-500">{t.sport} · {t.age_category || '—'}</p>
                 </div>
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === team.id ? null : team.id); }}
-                className="absolute top-3 right-3 w-7 h-7 rounded-md hover:bg-ink-100 flex items-center justify-center text-ink-400 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <MoreHorizontal size={14} />
-              </button>
-              {menuOpen === team.id && (
-                <div className="absolute top-11 right-3 z-10 bg-white rounded-lg shadow-floating border border-ink-100 py-1 animate-scale-in">
-                  <button
-                    onClick={() => handleDelete(team.id)}
-                    className="w-full px-3 py-1.5 text-left text-xs text-red-500 hover:bg-red-50 flex items-center gap-2"
-                  >
-                    <Trash2 size={12} /> Delete team
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={(e) => { e.stopPropagation(); openEdit(t); }} className="text-ink-400 hover:text-accent-600 p-1">
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); handleDelete(t); }} className="text-ink-400 hover:text-red-500 p-1">
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
-              )}
+              </div>
+              <div className="mt-3 flex items-center justify-between text-xs text-ink-400">
+                <span>{t.athlete_count} athletes</span>
+                <span>{t.season}</span>
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      {showAddModal && (
-        <AddTeamModal onClose={() => setShowAddModal(false)} onSaved={() => { setShowAddModal(false); loadTeams(); }} />
+      {/* Shared form fields used by both create and edit modals */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowCreate(false)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-ink-800">New Team</h3>
+              <button onClick={() => setShowCreate(false)} className="text-ink-400 hover:text-ink-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleCreate} className="space-y-4">
+              <TeamFormFields name={name} setName={setName} sport={sport} setSport={setSport}
+                ageCategory={ageCategory} setAgeCategory={setAgeCategory} season={season} setSeason={setSeason}
+                color={color} setColor={setColor} />
+              {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setShowCreate(false)} className="rounded-lg px-4 py-2 text-sm text-ink-600 hover:bg-ink-100">
+                  Cancel
+                </button>
+                <button type="submit" disabled={creating} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-50">
+                  {creating ? 'Creating...' : 'Create Team'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editTeam && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setEditTeam(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-ink-800">Edit Team</h3>
+              <button onClick={() => setEditTeam(null)} className="text-ink-400 hover:text-ink-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <TeamFormFields name={name} setName={setName} sport={sport} setSport={setSport}
+                ageCategory={ageCategory} setAgeCategory={setAgeCategory} season={season} setSeason={setSeason}
+                color={color} setColor={setColor} />
+              {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setEditTeam(null)} className="rounded-lg px-4 py-2 text-sm text-ink-600 hover:bg-ink-100">
+                  Cancel
+                </button>
+                <button type="submit" disabled={saving} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-50">
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-function AddTeamModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [name, setName] = useState('');
-  const [ageCategory, setAgeCategory] = useState(AGE_CATEGORIES[2]);
-  const [season, setSeason] = useState('');
-  const [color, setColor] = useState(TEAM_COLORS[0]);
-  const [saving, setSaving] = useState(false);
-
-  const [athletes, setAthletes] = useState<Athlete[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState('');
-  const [athletesLoaded, setAthletesLoaded] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from('athletes').select('*').eq('status', 'active').order('name', { ascending: true });
-      setAthletes((data as Athlete[]) || []);
-      setAthletesLoaded(true);
-    })();
-  }, []);
-
-  const filtered = athletes.filter((a) => a.name.toLowerCase().includes(search.toLowerCase()));
-
-  const toggleAthlete = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const handleSave = async () => {
-    if (!name.trim()) return;
-    setSaving(true);
-    const { data: teamData } = await supabase.from('teams').insert({
-      name: name.trim(),
-      age_category: ageCategory,
-      season: season.trim() || null,
-      color,
-      sport: 'Futebol',
-      athlete_count: selectedIds.size,
-    }).select('*').single();
-
-    if (teamData && selectedIds.size > 0) {
-      const inserts = Array.from(selectedIds).map((athleteId) => ({
-        team_id: (teamData as Team).id,
-        athlete_id: athleteId,
-      }));
-      await supabase.from('team_athletes').insert(inserts);
-    }
-    setSaving(false);
-    onSaved();
-  };
-
+function TeamFormFields({ name, setName, sport, setSport, ageCategory, setAgeCategory, season, setSeason, color, setColor }: {
+  name: string; setName: (v: string) => void;
+  sport: string; setSport: (v: string) => void;
+  ageCategory: string; setAgeCategory: (v: string) => void;
+  season: string; setSeason: (v: string) => void;
+  color: string; setColor: (v: string) => void;
+}) {
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title="New Team"
-      maxWidth="max-w-xl"
-      footer={
-        <>
-          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={handleSave} disabled={!name.trim() || saving}>
-            {saving ? 'Saving…' : 'Create team'}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
+    <>
+      <div>
+        <label className="block text-sm font-medium text-ink-700 mb-1">Team Name</label>
+        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required
+          className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm focus:border-accent-400 focus:outline-none" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>Team name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. HCT Sub-17" autoFocus />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>Age category</Label>
-            <Select
-              value={ageCategory}
-              onChange={(e) => setAgeCategory(e.target.value)}
-            >
-              {AGE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </Select>
-          </div>
-          <div>
-            <Label>Season (optional)</Label>
-            <Input value={season} onChange={(e) => setSeason(e.target.value)} placeholder="e.g. 2024/25" />
-          </div>
+          <label className="block text-sm font-medium text-ink-700 mb-1">Sport</label>
+          <select value={sport} onChange={(e) => setSport(e.target.value)} className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm focus:border-accent-400 focus:outline-none">
+            {SPORTS.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
         </div>
         <div>
-          <Label>Team color</Label>
-          <div className="flex gap-2">
-            {TEAM_COLORS.map((c) => (
-              <button
-                key={c}
-                onClick={() => setColor(c)}
-                className={`w-8 h-8 rounded-lg transition-all ${color === c ? 'ring-2 ring-offset-2 ring-ink-900 scale-110' : 'hover:scale-105'}`}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Athlete selection */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <Label>Select athletes</Label>
-            <span className="text-xs text-ink-400">{selectedIds.size} selected</span>
-          </div>
-          <div className="relative mb-2">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search athletes…"
-              className="pl-9"
-            />
-          </div>
-          <div className="max-h-48 overflow-y-auto scrollbar-thin border border-ink-100 rounded-lg">
-            {!athletesLoaded ? (
-              <div className="p-4 text-center text-xs text-ink-400">Loading athletes…</div>
-            ) : athletes.length === 0 ? (
-              <div className="p-4 text-center text-xs text-ink-400">No active athletes. Create athletes first.</div>
-            ) : filtered.length === 0 ? (
-              <div className="p-4 text-center text-xs text-ink-400">No matches.</div>
-            ) : (
-              filtered.map((a) => {
-                const selected = selectedIds.has(a.id);
-                return (
-                  <button
-                    key={a.id}
-                    onClick={() => toggleAthlete(a.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
-                      selected ? 'bg-accent-50' : 'hover:bg-ink-50'
-                    }`}
-                  >
-                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${
-                      selected ? 'bg-ink-900 border-ink-900' : 'border-ink-300'
-                    }`}>
-                      {selected && <Check size={12} className="text-white" />}
-                    </div>
-                    <span className="text-sm text-ink-700 flex-1">{a.name}</span>
-                    {a.jersey_number !== null && <span className="text-xs text-ink-400">#{a.jersey_number}</span>}
-                    {a.position && <span className="text-xs text-ink-400">{a.position}</span>}
-                  </button>
-                );
-              })
-            )}
-          </div>
+          <label className="block text-sm font-medium text-ink-700 mb-1">Age Category</label>
+          <select value={ageCategory} onChange={(e) => setAgeCategory(e.target.value)} className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm focus:border-accent-400 focus:outline-none">
+            {AGE_CATEGORIES.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
         </div>
       </div>
-    </Modal>
+      <div>
+        <label className="block text-sm font-medium text-ink-700 mb-1">Season</label>
+        <input type="text" value={season} onChange={(e) => setSeason(e.target.value)}
+          className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm focus:border-accent-400 focus:outline-none" />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-ink-700 mb-1">Color</label>
+        <div className="flex gap-2">
+          {TEAM_COLORS.map((c) => (
+            <button key={c} type="button" onClick={() => setColor(c)}
+              className={`h-8 w-8 rounded-lg transition-transform ${color === c ? 'ring-2 ring-offset-2 ring-ink-400 scale-110' : ''}`}
+              style={{ backgroundColor: c }} />
+          ))}
+        </div>
+      </div>
+    </>
   );
 }

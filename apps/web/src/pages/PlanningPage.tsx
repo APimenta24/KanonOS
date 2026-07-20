@@ -1,350 +1,561 @@
-import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, CalendarDays, ArrowRight } from 'lucide-react';
-import { supabase, type Team, type SessionWithTeam } from '../lib/supabase';
-import { useNavigate } from '../lib/router';
-import { getISOWeek, getWeekDates, weekRangeString, DAYS_OF_WEEK, formatDate, addWeeks, formatDateInput } from '../lib/date';
-import { STATUS_CONFIG } from '../lib/constants';
-import { LoadingState, EmptyState } from '../components/ui/States';
-import { Button, IconButton } from '../components/ui/Button';
-import { Modal } from '../components/ui/Modal';
-import { Input, Textarea, Select, Label } from '../components/ui/Form';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase, type Season, type Macrocycle, type Mesocycle, type Microcycle, type WorkDay, type TrainingSession } from '../lib/supabase';
+import { useWorkingContext } from '../lib/working-context';
+import { Plus, ChevronRight, Calendar, X, Pencil, Trash2, Dumbbell, Trophy, Activity, Video, Clock } from 'lucide-react';
+
+type TimeScale = 'season' | 'macrocycle' | 'mesocycle' | 'microcycle' | 'week' | 'day';
+
+const SCALE_LABELS: Record<TimeScale, string> = {
+  season: 'Season',
+  macrocycle: 'Macrocycle',
+  mesocycle: 'Mesocycle',
+  microcycle: 'Microcycle',
+  week: 'Week',
+  day: 'Day',
+};
+
+const SCALES: TimeScale[] = ['season', 'macrocycle', 'mesocycle', 'microcycle', 'week', 'day'];
+
+type EditTarget = {
+  level: 'season' | 'macrocycle' | 'mesocycle' | 'microcycle' | 'workday' | 'session';
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  objective: string;
+  notes: string;
+};
+
+const EVENT_ICONS: Record<string, typeof Dumbbell> = {
+  training: Dumbbell,
+  match: Trophy,
+  gym: Activity,
+  video: Video,
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  planned: 'bg-ink-100 text-ink-600',
+  in_progress: 'bg-blue-50 text-blue-600',
+  completed: 'bg-emerald-50 text-emerald-700',
+  cancelled: 'bg-red-50 text-red-600',
+};
 
 export function PlanningPage() {
+  const { team, seasons, setSeasonId, refresh } = useWorkingContext();
   const navigate = useNavigate();
-  const { week: currentWeek, year: currentYear } = getISOWeek(new Date());
-  const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [selectedWeek, setSelectedWeek] = useState(currentWeek);
-  const [weeks, setWeeks] = useState<{ year: number; week: number; sessionCount: number }[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [scale, setScale] = useState<TimeScale>('season');
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  const [macrocycles, setMacrocycles] = useState<Macrocycle[]>([]);
+  const [selectedMacroId, setSelectedMacroId] = useState<string | null>(null);
+  const [mesocycles, setMesocycles] = useState<Mesocycle[]>([]);
+  const [selectedMesoId, setSelectedMesoId] = useState<string | null>(null);
+  const [microcycles, setMicrocycles] = useState<Microcycle[]>([]);
+  const [selectedMicroId, setSelectedMicroId] = useState<string | null>(null);
+  const [workDays, setWorkDays] = useState<WorkDay[]>([]);
+  const [sessions, setSessions] = useState<TrainingSession[]>([]);
+  const [showCreate, setShowCreate] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [formName, setFormName] = useState('');
+  const [formStart, setFormStart] = useState('');
+  const [formEnd, setFormEnd] = useState('');
+  const [formObjective, setFormObjective] = useState('');
+  const [formNotes, setFormNotes] = useState('');
 
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('training_sessions')
-        .select('week_year, week_number');
-      
-      const weekMap = new Map<string, number>();
-      (data || []).forEach((s: { week_year: number; week_number: number }) => {
-        const key = `${s.week_year}-${s.week_number}`;
-        weekMap.set(key, (weekMap.get(key) || 0) + 1);
-      });
+    const current = seasons.find((s) => s.id === selectedSeasonId);
+    if (!current && seasons.length > 0) {
+      setSelectedSeasonId(seasons[0].id);
+      setSeasonId(seasons[0].id);
+    } else if (current) {
+      setSeasonId(current.id);
+    }
+  }, [seasons, selectedSeasonId, setSeasonId]);
 
-      const weekList: { year: number; week: number; sessionCount: number }[] = [];
-      for (let w = currentWeek - 4; w <= currentWeek + 8; w++) {
-        let y = currentYear;
-        let adjustedW = w;
-        if (w < 1) { y--; adjustedW = 52 + w; }
-        if (w > 52) { y++; adjustedW = w - 52; }
-        const key = `${y}-${adjustedW}`;
-        weekList.push({ year: y, week: adjustedW, sessionCount: weekMap.get(key) || 0 });
+  const loadMacrocycles = useCallback(async (seasonId: string) => {
+    const { data } = await supabase.from('macrocycles').select('*').eq('season_id', seasonId).order('order_index');
+    setMacrocycles((data as Macrocycle[]) || []);
+    setSelectedMacroId(null);
+    setMesocycles([]);
+    setSelectedMesoId(null);
+    setMicrocycles([]);
+    setSelectedMicroId(null);
+    setWorkDays([]);
+    setSessions([]);
+  }, []);
+
+  useEffect(() => {
+    if (selectedSeasonId) loadMacrocycles(selectedSeasonId);
+    else { setMacrocycles([]); setSelectedMacroId(null); }
+  }, [selectedSeasonId, loadMacrocycles]);
+
+  const loadMesocycles = useCallback(async (macroId: string) => {
+    const { data } = await supabase.from('mesocycles').select('*').eq('macrocycle_id', macroId).order('order_index');
+    setMesocycles((data as Mesocycle[]) || []);
+    setSelectedMesoId(null);
+    setMicrocycles([]);
+    setSelectedMicroId(null);
+    setWorkDays([]);
+    setSessions([]);
+  }, []);
+
+  useEffect(() => {
+    if (selectedMacroId) loadMesocycles(selectedMacroId);
+    else { setMesocycles([]); setSelectedMesoId(null); }
+  }, [selectedMacroId, loadMesocycles]);
+
+  const loadMicrocycles = useCallback(async (mesoId: string) => {
+    const { data } = await supabase.from('microcycles').select('*').eq('mesocycle_id', mesoId).order('order_index');
+    setMicrocycles((data as Microcycle[]) || []);
+    setSelectedMicroId(null);
+    setWorkDays([]);
+    setSessions([]);
+  }, []);
+
+  useEffect(() => {
+    if (selectedMesoId) loadMicrocycles(selectedMesoId);
+    else { setMicrocycles([]); setSelectedMicroId(null); }
+  }, [selectedMesoId, loadMicrocycles]);
+
+  const loadWorkDays = useCallback(async (microId: string | null) => {
+    if (!team) { setWorkDays([]); return; }
+    let query = supabase.from('work_days').select('*').eq('team_id', team.id).order('date', { ascending: true });
+    if (microId) query = query.eq('microcycle_id', microId);
+    const { data } = await query;
+    setWorkDays((data as WorkDay[]) || []);
+    setSessions([]);
+  }, [team]);
+
+  useEffect(() => {
+    loadWorkDays(selectedMicroId);
+  }, [selectedMicroId, loadWorkDays]);
+
+  const loadAllSessions = useCallback(async () => {
+    if (!team) { setSessions([]); return; }
+    const { data } = await supabase.from('training_sessions').select('*').eq('team_id', team.id).order('date', { ascending: true }).order('time');
+    setSessions((data as TrainingSession[]) || []);
+  }, [team]);
+
+  useEffect(() => {
+    if (scale === 'week' || scale === 'day') loadAllSessions();
+  }, [scale, loadAllSessions]);
+
+  const resetForm = () => {
+    setFormName(''); setFormStart(''); setFormEnd(''); setFormObjective(''); setFormNotes(''); setError(null);
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!team) return;
+    setCreating(true); setError(null);
+    try {
+      if (showCreate === 'season') {
+        const { data, error } = await supabase.from('seasons').insert({
+          team_id: team.id, name: formName, start_date: formStart, end_date: formEnd,
+          objective: formObjective || null, notes: formNotes || null, training_days: [],
+        }).select().single();
+        if (error) throw error;
+        await refresh();
+        setSelectedSeasonId((data as Season).id);
+        setSeasonId((data as Season).id);
+      } else if (showCreate === 'macrocycle' && selectedSeasonId) {
+        const { data, error } = await supabase.from('macrocycles').insert({
+          season_id: selectedSeasonId, name: formName, start_date: formStart, end_date: formEnd,
+          objective: formObjective || null, order_index: macrocycles.length,
+        }).select().single();
+        if (error) throw error;
+        setSelectedMacroId((data as Macrocycle).id);
+        await loadMacrocycles(selectedSeasonId);
+      } else if (showCreate === 'mesocycle' && selectedMacroId) {
+        const { data, error } = await supabase.from('mesocycles').insert({
+          macrocycle_id: selectedMacroId, name: formName, start_date: formStart, end_date: formEnd,
+          objective: formObjective || null, order_index: mesocycles.length,
+        }).select().single();
+        if (error) throw error;
+        setSelectedMesoId((data as Mesocycle).id);
+        await loadMesocycles(selectedMacroId);
+      } else if (showCreate === 'microcycle' && selectedMesoId) {
+        const { data, error } = await supabase.from('microcycles').insert({
+          mesocycle_id: selectedMesoId, name: formName, start_date: formStart, end_date: formEnd,
+          objective: formObjective || null, order_index: microcycles.length,
+        }).select().single();
+        if (error) throw error;
+        setSelectedMicroId((data as Microcycle).id);
+        await loadMicrocycles(selectedMesoId);
+      } else if (showCreate === 'workday' && team) {
+        const insertData: Record<string, unknown> = {
+          team_id: team.id, date: formStart, objective: formObjective || null,
+          notes: formNotes || null, status: 'planned',
+        };
+        if (selectedMicroId) insertData.microcycle_id = selectedMicroId;
+        const { data, error } = await supabase.from('work_days').insert(insertData).select().single();
+        if (error) throw error;
+        await loadWorkDays(selectedMicroId);
       }
-      setWeeks(weekList);
-      setLoading(false);
-    })();
-  }, [currentWeek, currentYear]);
-
-  const goPrev = () => {
-    const prev = addWeeks(selectedYear, selectedWeek, -1);
-    setSelectedYear(prev.year);
-    setSelectedWeek(prev.week);
+    } catch (err) {
+      setError((err as Error).message); setCreating(false); return;
+    }
+    setCreating(false); setShowCreate(null); resetForm();
   };
 
-  const goNext = () => {
-    const next = addWeeks(selectedYear, selectedWeek, 1);
-    setSelectedYear(next.year);
-    setSelectedWeek(next.week);
+  const openEdit = (level: EditTarget['level'], item: { id: string; name?: string; start_date?: string; end_date?: string; date?: string; objective?: string | null; notes?: string | null }) => {
+    setEditTarget({ level, id: item.id, name: item.name || '', start_date: item.start_date || item.date || '', end_date: item.end_date || '', objective: item.objective || '', notes: item.notes || '' });
+    setError(null);
   };
 
-  const isCurrentWeek = selectedYear === currentYear && selectedWeek === currentWeek;
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTarget) return;
+    setSaving(true); setError(null);
+    const tableMap: Record<string, string> = { season: 'seasons', macrocycle: 'macrocycles', mesocycle: 'mesocycles', microcycle: 'microcycles', workday: 'work_days', session: 'training_sessions' };
+    const updateData: Record<string, unknown> = { name: editTarget.name, objective: editTarget.objective || null };
+    if (editTarget.level === 'workday') { updateData.date = editTarget.start_date; updateData.notes = editTarget.notes || null; }
+    else { updateData.start_date = editTarget.start_date; updateData.end_date = editTarget.end_date || null; if (editTarget.level === 'season') updateData.notes = editTarget.notes || null; }
+    const { error } = await supabase.from(tableMap[editTarget.level]).update(updateData).eq('id', editTarget.id);
+    if (error) { setError(error.message); setSaving(false); return; }
+    setSaving(false); setEditTarget(null);
+    if (editTarget.level === 'season') await refresh();
+    else if (editTarget.level === 'macrocycle' && selectedSeasonId) await loadMacrocycles(selectedSeasonId);
+    else if (editTarget.level === 'mesocycle' && selectedMacroId) await loadMesocycles(selectedMacroId);
+    else if (editTarget.level === 'microcycle' && selectedMesoId) await loadMicrocycles(selectedMesoId);
+    else if (editTarget.level === 'workday') await loadWorkDays(selectedMicroId);
+  };
 
-  return (
-    <div className="space-y-6">
+  const handleDelete = async (level: string, id: string) => {
+    const tableMap: Record<string, string> = { season: 'seasons', macrocycle: 'macrocycles', mesocycle: 'mesocycles', microcycle: 'microcycles', workday: 'work_days', session: 'training_sessions' };
+    const { error } = await supabase.from(tableMap[level]).delete().eq('id', id);
+    if (error) { setError(error.message); return; }
+    if (level === 'season') { if (selectedSeasonId === id) { setSelectedSeasonId(null); setSeasonId(null); } await refresh(); }
+    else if (level === 'macrocycle') { if (selectedMacroId === id) setSelectedMacroId(null); if (selectedSeasonId) await loadMacrocycles(selectedSeasonId); }
+    else if (level === 'mesocycle') { if (selectedMesoId === id) setSelectedMesoId(null); if (selectedMacroId) await loadMesocycles(selectedMacroId); }
+    else if (level === 'microcycle') { if (selectedMicroId === id) setSelectedMicroId(null); if (selectedMesoId) await loadMicrocycles(selectedMesoId); }
+    else if (level === 'workday') await loadWorkDays(selectedMicroId);
+  };
+
+  // Auto-navigate scale: when selecting an item, drill into next scale
+  const handleSeasonClick = (id: string) => { setSelectedSeasonId(id); setScale('macrocycle'); };
+  const handleMacroClick = (id: string) => { setSelectedMacroId(id); setScale('mesocycle'); };
+  const handleMesoClick = (id: string) => { setSelectedMesoId(id); setScale('microcycle'); };
+  const handleMicroClick = (id: string) => { setSelectedMicroId(id); setScale('day'); };
+
+  if (!team) {
+    return (
       <div>
-        <h1 className="text-2xl font-bold text-ink-900">Weekly Planning</h1>
-        <p className="text-sm text-ink-500 mt-1">Select a week to plan your training sessions.</p>
+        <h1 className="text-2xl font-semibold text-ink-800 mb-2">Planning</h1>
+        <div className="rounded-xl border border-ink-200 bg-white p-8 text-center">
+          <Calendar className="mx-auto mb-3 h-8 w-8 text-ink-300" />
+          <p className="text-sm text-ink-500">Select a team to start planning your season.</p>
+        </div>
       </div>
+    );
+  }
 
-      {loading ? (
-        <LoadingState />
-      ) : (
-        <>
-          {/* Week selector */}
-          <div className="flex items-center justify-between bg-white rounded-xl border border-ink-100 p-4">
-            <div className="flex items-center gap-3">
-              <IconButton onClick={goPrev} aria-label="Previous week">
-                <ChevronLeft size={18} />
-              </IconButton>
-              <div className="text-center min-w-[160px]">
-                <div className="text-sm font-semibold text-ink-900">
-                  Week {selectedWeek} · {selectedYear}
-                </div>
-                <div className="text-xs text-ink-400">
-                  {weekRangeString(selectedYear, selectedWeek)}
+  const selectedSeason = seasons.find((s) => s.id === selectedSeasonId);
+  const selectedMacro = macrocycles.find((m) => m.id === selectedMacroId);
+  const selectedMeso = mesocycles.find((m) => m.id === selectedMesoId);
+  const selectedMicro = microcycles.find((m) => m.id === selectedMicroId);
+
+  // Breadcrumb from hierarchy
+  const crumbs: { label: string; onClick: () => void }[] = [];
+  if (selectedSeason) crumbs.push({ label: selectedSeason.name, onClick: () => { setSelectedMacroId(null); setSelectedMesoId(null); setSelectedMicroId(null); setScale('season'); } });
+  if (selectedMacro) crumbs.push({ label: selectedMacro.name, onClick: () => { setSelectedMesoId(null); setSelectedMicroId(null); setScale('macrocycle'); } });
+  if (selectedMeso) crumbs.push({ label: selectedMeso.name, onClick: () => { setSelectedMicroId(null); setScale('mesocycle'); } });
+  if (selectedMicro) crumbs.push({ label: selectedMicro.name, onClick: () => { setScale('microcycle'); } });
+
+  // ── Timeline rendering by scale ──────────────────────────────
+
+  const renderTimeline = () => {
+    switch (scale) {
+      case 'season':
+        return (
+          <div className="space-y-3">
+            {seasons.length === 0 && <EmptyState label="seasons" onCreate={() => { setShowCreate('season'); resetForm(); }} />}
+            {seasons.map((s) => (
+              <TimelineBlock key={s.id} title={s.name} subtitle={`${s.start_date} → ${s.end_date}`} objective={s.objective}
+                onClick={() => handleSeasonClick(s.id)} onEdit={() => openEdit('season', s)} onDelete={() => handleDelete('season', s.id)} />
+            ))}
+          </div>
+        );
+      case 'macrocycle':
+        return (
+          <div className="space-y-3">
+            <SectionHeader label="Macrocycles" onCreate={() => { setShowCreate('macrocycle'); resetForm(); }} />
+            {macrocycles.length === 0 && <EmptyState label="macrocycles" onCreate={() => { setShowCreate('macrocycle'); resetForm(); }} />}
+            {macrocycles.map((m) => (
+              <TimelineBlock key={m.id} title={m.name} subtitle={`${m.start_date} → ${m.end_date}`} objective={m.objective}
+                onClick={() => handleMacroClick(m.id)} onEdit={() => openEdit('macrocycle', m)} onDelete={() => handleDelete('macrocycle', m.id)} />
+            ))}
+          </div>
+        );
+      case 'mesocycle':
+        return (
+          <div className="space-y-3">
+            <SectionHeader label="Mesocycles" onCreate={() => { setShowCreate('mesocycle'); resetForm(); }} />
+            {mesocycles.length === 0 && <EmptyState label="mesocycles" onCreate={() => { setShowCreate('mesocycle'); resetForm(); }} />}
+            {mesocycles.map((m) => (
+              <TimelineBlock key={m.id} title={m.name} subtitle={`${m.start_date} → ${m.end_date}`} objective={m.objective}
+                onClick={() => handleMesoClick(m.id)} onEdit={() => openEdit('mesocycle', m)} onDelete={() => handleDelete('mesocycle', m.id)} />
+            ))}
+          </div>
+        );
+      case 'microcycle':
+        return (
+          <div className="space-y-3">
+            <SectionHeader label="Microcycles" onCreate={() => { setShowCreate('microcycle'); resetForm(); }} />
+            {microcycles.length === 0 && <EmptyState label="microcycles" onCreate={() => { setShowCreate('microcycle'); resetForm(); }} />}
+            {microcycles.map((m) => (
+              <TimelineBlock key={m.id} title={m.name} subtitle={`${m.start_date} → ${m.end_date}`} objective={m.objective}
+                onClick={() => handleMicroClick(m.id)} onEdit={() => openEdit('microcycle', m)} onDelete={() => handleDelete('microcycle', m.id)} />
+            ))}
+          </div>
+        );
+      case 'week': {
+        // Group sessions by week
+        const weekGroups: Record<string, TrainingSession[]> = {};
+        sessions.forEach((s) => {
+          const key = `${s.week_year}-W${s.week_number}`;
+          if (!weekGroups[key]) weekGroups[key] = [];
+          weekGroups[key].push(s);
+        });
+        const weekKeys = Object.keys(weekGroups).sort();
+        return (
+          <div className="space-y-4">
+            {weekKeys.length === 0 && <div className="rounded-xl border border-ink-200 bg-white p-8 text-center text-sm text-ink-500">No sessions to display.</div>}
+            {weekKeys.map((wk) => (
+              <div key={wk} className="rounded-xl border border-ink-200 bg-white p-4">
+                <h3 className="text-sm font-semibold text-ink-700 uppercase tracking-wider mb-3">{wk}</h3>
+                <div className="space-y-1">
+                  {weekGroups[wk].map((s) => (
+                    <SessionRow key={s.id} session={s} onClick={() => navigate(`/sessions/${s.id}`)} />
+                  ))}
                 </div>
               </div>
-              <IconButton onClick={goNext} aria-label="Next week">
-                <ChevronRight size={18} />
-              </IconButton>
-            </div>
-            <div className="flex items-center gap-2">
-              {isCurrentWeek && (
-                <span className="text-xs text-accent-600 font-medium px-2 py-1 bg-accent-50 rounded-full">Current</span>
-              )}
-              <Button size="sm" onClick={() => navigate({ name: 'planning-week', year: selectedYear, week: selectedWeek })}>
-                Open week <ArrowRight size={14} />
-              </Button>
-            </div>
+            ))}
           </div>
-
-          {/* Week grid overview */}
-          <div className="grid grid-cols-7 gap-2">
-            {weeks.map((w) => {
-              const isSelected = w.year === selectedYear && w.week === selectedWeek;
-              const isCurrent = w.year === currentYear && w.week === currentWeek;
+        );
+      }
+      case 'day': {
+        // Group work days + sessions by date
+        const dayGroups: Record<string, { workDay?: WorkDay; sessions: TrainingSession[] }> = {};
+        workDays.forEach((wd) => {
+          if (!dayGroups[wd.date]) dayGroups[wd.date] = { sessions: [] };
+          dayGroups[wd.date].workDay = wd;
+        });
+        sessions.forEach((s) => {
+          if (!dayGroups[s.date]) dayGroups[s.date] = { sessions: [] };
+          dayGroups[s.date].sessions.push(s);
+        });
+        const dayKeys = Object.keys(dayGroups).sort();
+        return (
+          <div className="space-y-3">
+            <SectionHeader label="Working Days" onCreate={() => { setShowCreate('workday'); resetForm(); }} />
+            {dayKeys.length === 0 && <EmptyState label="working days" onCreate={() => { setShowCreate('workday'); resetForm(); }} />}
+            {dayKeys.map((d) => {
+              const group = dayGroups[d];
+              const date = new Date(d);
               return (
-                <button
-                  key={`${w.year}-${w.week}`}
-                  onClick={() => { setSelectedYear(w.year); setSelectedWeek(w.week); }}
-                  className={`relative p-3 rounded-xl border text-left transition-all duration-200 ${
-                    isSelected
-                      ? 'border-ink-900 bg-ink-900 text-white'
-                      : 'border-ink-100 bg-white hover:border-ink-300'
-                  }`}
-                >
-                  <div className={`text-xs font-medium ${isSelected ? 'text-ink-300' : 'text-ink-400'}`}>
-                    W{w.week}
+                <div key={d} className="rounded-xl border border-ink-200 bg-white p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="flex h-12 w-12 flex-col items-center justify-center rounded-lg bg-accent-50 text-accent-700">
+                      <span className="text-xs font-medium uppercase">{date.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                      <span className="text-lg font-bold leading-none">{date.getDate()}</span>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-ink-800">{date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</p>
+                      {group.workDay?.objective && <p className="text-xs text-ink-500 mt-0.5">{group.workDay.objective}</p>}
+                    </div>
+                    {group.workDay && (
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => openEdit('workday', group.workDay!)} className="text-ink-400 hover:text-accent-600 p-1"><Pencil className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => handleDelete('workday', group.workDay!.id)} className="text-ink-400 hover:text-red-500 p-1"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </div>
+                    )}
                   </div>
-                  <div className={`text-xs mt-1 ${isSelected ? 'text-ink-400' : 'text-ink-500'}`}>
-                    {w.sessionCount > 0 ? `${w.sessionCount} sessions` : '—'}
-                  </div>
-                  {isCurrent && !isSelected && (
-                    <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-accent-500" />
+                  {group.sessions.length > 0 && (
+                    <div className="ml-15 space-y-1 pl-2">
+                      {group.sessions.map((s) => (
+                        <SessionRow key={s.id} session={s} onClick={() => navigate(`/sessions/${s.id}`)} />
+                      ))}
+                    </div>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
+        );
+      }
+    }
+  };
 
-          {/* Day-by-day preview */}
-          <WeekPreview year={selectedYear} week={selectedWeek} />
-        </>
+  return (
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-ink-800">Planning</h1>
+        <p className="mt-1 text-sm text-ink-500">Season → Macrocycle → Mesocycle → Microcycle → Working Day → Session</p>
+      </div>
+
+      {/* Breadcrumb */}
+      {crumbs.length > 0 && (
+        <div className="mb-4 flex items-center gap-1 text-sm text-ink-500 flex-wrap">
+          {crumbs.map((item, i) => (
+            <div key={i} className="flex items-center gap-1">
+              {i > 0 && <ChevronRight className="h-3 w-3 text-ink-300" />}
+              <button onClick={item.onClick} className="hover:text-accent-600 transition-colors">{item.label}</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Time scale switcher */}
+      <div className="mb-6 flex items-center gap-1 rounded-lg border border-ink-200 bg-white p-1">
+        {SCALES.map((s) => (
+          <button key={s} onClick={() => setScale(s)}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${scale === s ? 'bg-accent-600 text-white' : 'text-ink-600 hover:bg-ink-100'}`}>
+            {SCALE_LABELS[s]}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600"><X className="h-4 w-4" /></button>
+        </div>
+      )}
+
+      {renderTimeline()}
+
+      {/* Create modal */}
+      {showCreate && (
+        <Modal title={`New ${showCreate.charAt(0).toUpperCase() + showCreate.slice(1)}`} onClose={() => setShowCreate(null)}>
+          <form onSubmit={handleCreate} className="space-y-4">
+            <FormField label="Name"><input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} required className={inputClass} /></FormField>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="Start Date"><input type="date" value={formStart} onChange={(e) => setFormStart(e.target.value)} required className={inputClass} /></FormField>
+              <FormField label="End Date"><input type="date" value={formEnd} onChange={(e) => setFormEnd(e.target.value)} className={inputClass} /></FormField>
+            </div>
+            <FormField label="Objective"><textarea value={formObjective} onChange={(e) => setFormObjective(e.target.value)} rows={2} className={inputClass} /></FormField>
+            <FormField label="Notes"><textarea value={formNotes} onChange={(e) => setFormNotes(e.target.value)} rows={2} className={inputClass} /></FormField>
+            {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+            <ModalButtons onCancel={() => setShowCreate(null)} submitting={creating} submitLabel="Create" />
+          </form>
+        </Modal>
+      )}
+
+      {/* Edit modal */}
+      {editTarget && (
+        <Modal title={`Edit ${editTarget.level.charAt(0).toUpperCase() + editTarget.level.slice(1)}`} onClose={() => setEditTarget(null)}>
+          <form onSubmit={handleSaveEdit} className="space-y-4">
+            <FormField label="Name"><input type="text" value={editTarget.name} onChange={(e) => setEditTarget({ ...editTarget, name: e.target.value })} required className={inputClass} /></FormField>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label={editTarget.level === 'workday' ? 'Date' : 'Start Date'}>
+                <input type="date" value={editTarget.start_date} onChange={(e) => setEditTarget({ ...editTarget, start_date: e.target.value })} required className={inputClass} />
+              </FormField>
+              {editTarget.level !== 'workday' && (
+                <FormField label="End Date"><input type="date" value={editTarget.end_date} onChange={(e) => setEditTarget({ ...editTarget, end_date: e.target.value })} className={inputClass} /></FormField>
+              )}
+            </div>
+            <FormField label="Objective"><textarea value={editTarget.objective} onChange={(e) => setEditTarget({ ...editTarget, objective: e.target.value })} rows={2} className={inputClass} /></FormField>
+            <FormField label="Notes"><textarea value={editTarget.notes} onChange={(e) => setEditTarget({ ...editTarget, notes: e.target.value })} rows={2} className={inputClass} /></FormField>
+            {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+            <ModalButtons onCancel={() => setEditTarget(null)} submitting={saving} submitLabel="Save" />
+          </form>
+        </Modal>
       )}
     </div>
   );
 }
 
-function WeekPreview({ year, week }: { year: number; week: number }) {
-  const navigate = useNavigate();
-  const [sessions, setSessions] = useState<SessionWithTeam[]>([]);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [addDay, setAddDay] = useState<number | null>(null);
+// ── Shared UI helpers ──────────────────────────────────────────
 
-  const weekDates = getWeekDates(year, week);
+const inputClass = 'w-full rounded-lg border border-ink-200 px-3 py-2 text-sm focus:border-accent-400 focus:outline-none';
 
-  useEffect(() => {
-    (async () => {
-      const [{ data: sessionsData }, { data: teamsData }] = await Promise.all([
-        supabase
-          .from('training_sessions')
-          .select('*, team:teams(id, name, color)')
-          .eq('week_year', year)
-          .eq('week_number', week)
-          .order('time', { ascending: true }),
-        supabase.from('teams').select('*'),
-      ]);
-      setSessions((sessionsData as unknown as SessionWithTeam[]) || []);
-      setTeams(teamsData || []);
-      setLoading(false);
-    })();
-  }, [year, week]);
-
-  const handleAdd = (dayIndex: number) => {
-    setAddDay(dayIndex);
-    setShowAddModal(true);
-  };
-
-  if (loading) return <LoadingState />;
-
+function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
-    <>
-      <div className="grid grid-cols-7 gap-3">
-        {weekDates.map((date, i) => {
-          const daySessions = sessions.filter((s) => {
-            const sDate = new Date(s.date);
-            return sDate.toDateString() === date.toDateString();
-          });
-          const isToday = date.toDateString() === new Date().toDateString();
-
-          return (
-            <div
-              key={i}
-              className={`bg-white rounded-xl border p-3 min-h-[140px] flex flex-col ${
-                isToday ? 'border-accent-300 bg-accent-50/30' : 'border-ink-100'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <span className="text-xs font-medium text-ink-400">{DAYS_OF_WEEK[i]}</span>
-                  <span className={`ml-1.5 text-sm font-bold ${isToday ? 'text-accent-600' : 'text-ink-900'}`}>
-                    {date.getDate()}
-                  </span>
-                </div>
-                <button
-                  onClick={() => handleAdd(i)}
-                  className="w-5 h-5 rounded-md hover:bg-ink-100 flex items-center justify-center text-ink-400 hover:text-ink-700 transition-colors"
-                >
-                  <Plus size={13} />
-                </button>
-              </div>
-
-              <div className="flex-1 space-y-1.5">
-                {daySessions.map((s) => {
-                  const status = STATUS_CONFIG[s.status];
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => navigate({ name: 'session', sessionId: s.id })}
-                      className="w-full text-left p-2 rounded-lg hover:bg-ink-50 transition-colors group"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-0.5 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: s.team?.color || '#D4D4D8' }} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-ink-900 truncate">{s.title}</p>
-                          <p className="text-[10px] text-ink-400">{s.time}</p>
-                          <div className={`inline-flex items-center gap-1 mt-0.5 ${status.color}`}>
-                            <span className={`w-1 h-1 rounded-full ${status.dot}`} />
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-ink-800">{title}</h3>
+          <button onClick={onClose} className="text-ink-400 hover:text-ink-600"><X className="h-5 w-5" /></button>
+        </div>
+        {children}
       </div>
-
-      {sessions.length === 0 && (
-        <EmptyState
-          icon={<CalendarDays size={36} />}
-          title="No sessions planned this week"
-          description="Click the + on any day to add a training session."
-        />
-      )}
-
-      {showAddModal && addDay !== null && (
-        <AddSessionModal
-          onClose={() => setShowAddModal(false)}
-          date={weekDates[addDay]}
-          week={week}
-          year={year}
-          teams={teams}
-          onSaved={() => {
-            setShowAddModal(false);
-            setLoading(true);
-            // reload
-            (async () => {
-              const { data } = await supabase
-                .from('training_sessions')
-                .select('*, team:teams(id, name, color)')
-                .eq('week_year', year)
-                .eq('week_number', week)
-                .order('time', { ascending: true });
-              setSessions((data as unknown as SessionWithTeam[]) || []);
-              setLoading(false);
-            })();
-          }}
-        />
-      )}
-    </>
+    </div>
   );
 }
 
-function AddSessionModal({
-  onClose,
-  date,
-  week,
-  year,
-  teams,
-  onSaved,
-}: {
-  onClose: () => void;
-  date: Date;
-  week: number;
-  year: number;
-  teams: Team[];
-  onSaved: () => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [teamId, setTeamId] = useState(teams[0]?.id || '');
-  const [time, setTime] = useState('18:30');
-  const [location, setLocation] = useState('');
-  const [objectives, setObjectives] = useState('');
-  const [saving, setSaving] = useState(false);
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><label className="block text-sm font-medium text-ink-700 mb-1">{label}</label>{children}</div>;
+}
 
-  const handleSave = async () => {
-    if (!title.trim() || !teamId) return;
-    setSaving(true);
-    await supabase.from('training_sessions').insert({
-      title: title.trim(),
-      team_id: teamId,
-      date: formatDateInput(date),
-      time,
-      location: location.trim() || null,
-      objectives: objectives.trim() || null,
-      status: 'planned',
-      week_number: week,
-      week_year: year,
-    });
-    setSaving(false);
-    onSaved();
-  };
-
+function ModalButtons({ onCancel, submitting, submitLabel }: { onCancel: () => void; submitting: boolean; submitLabel: string }) {
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={`New Session — ${formatDate(date)}`}
-      footer={
-        <>
-          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={handleSave} disabled={!title.trim() || !teamId || saving}>
-            {saving ? 'Saving…' : 'Create session'}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div>
-          <Label>Session title</Label>
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Tática Ofensiva" autoFocus />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>Team</Label>
-            <Select value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <Label>Time</Label>
-            <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-          </div>
-        </div>
-        <div>
-          <Label>Location</Label>
-          <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Campo Principal" />
-        </div>
-        <div>
-          <Label>Objectives</Label>
-          <Textarea rows={3} value={objectives} onChange={(e) => setObjectives(e.target.value)} placeholder="What should this session achieve?" />
-        </div>
+    <div className="flex justify-end gap-2">
+      <button type="button" onClick={onCancel} className="rounded-lg px-4 py-2 text-sm text-ink-600 hover:bg-ink-100">Cancel</button>
+      <button type="submit" disabled={submitting} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-50">
+        {submitting ? 'Saving...' : submitLabel}
+      </button>
+    </div>
+  );
+}
+
+function SectionHeader({ label, onCreate }: { label: string; onCreate: () => void }) {
+  return (
+    <div className="flex items-center justify-between mb-2">
+      <h2 className="text-sm font-semibold text-ink-700 uppercase tracking-wider">{label}</h2>
+      <button onClick={onCreate} className="flex items-center gap-1 text-xs text-accent-600 hover:text-accent-700 font-medium">
+        <Plus className="h-3 w-3" /> New
+      </button>
+    </div>
+  );
+}
+
+function EmptyState({ label, onCreate }: { label: string; onCreate: () => void }) {
+  return (
+    <div className="rounded-xl border border-ink-200 bg-white p-8 text-center">
+      <p className="text-sm text-ink-500 mb-3">No {label} yet.</p>
+      <button onClick={onCreate} className="text-sm text-accent-600 hover:text-accent-700 font-medium">Create one now</button>
+    </div>
+  );
+}
+
+function TimelineBlock({ title, subtitle, objective, onClick, onEdit, onDelete }: {
+  title: string; subtitle: string; objective: string | null;
+  onClick: () => void; onEdit: () => void; onDelete: () => void;
+}) {
+  return (
+    <div className="group flex items-center gap-4 rounded-xl border border-ink-200 bg-white p-4 hover:border-accent-300 transition-colors cursor-pointer" onClick={onClick}>
+      <div className="h-full w-1.5 rounded-full bg-accent-400" />
+      <div className="flex-1">
+        <p className="text-sm font-semibold text-ink-800">{title}</p>
+        <p className="text-xs text-ink-500 mt-0.5">{subtitle}</p>
+        {objective && <p className="text-xs text-ink-400 mt-1">{objective}</p>}
       </div>
-    </Modal>
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="text-ink-400 hover:text-accent-600 p-1"><Pencil className="h-4 w-4" /></button>
+        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-ink-400 hover:text-red-500 p-1"><Trash2 className="h-4 w-4" /></button>
+      </div>
+      <ChevronRight className="h-4 w-4 text-ink-300" />
+    </div>
+  );
+}
+
+function SessionRow({ session, onClick }: { session: TrainingSession; onClick: () => void }) {
+  const Icon = EVENT_ICONS[session.event_type] || Dumbbell;
+  return (
+    <div className="group flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-ink-50 cursor-pointer transition-colors" onClick={onClick}>
+      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-50 text-accent-700">
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="flex-1">
+        <p className="text-sm font-medium text-ink-800">{session.title}</p>
+        <p className="text-xs text-ink-500 flex items-center gap-1"><Clock className="h-3 w-3" />{session.time}{session.location && ` · ${session.location}`}</p>
+      </div>
+      <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_COLORS[session.status] || ''}`}>{session.status.replace('_', ' ')}</span>
+    </div>
   );
 }

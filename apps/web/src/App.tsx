@@ -1,29 +1,58 @@
-import { useRoute } from './lib/router';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './lib/auth';
+import { WorkingContextProvider } from './lib/working-context';
 import { Layout } from './components/Layout';
+import { SignInPage } from './pages/SignInPage';
+import { SignUpPage } from './pages/SignUpPage';
 import { WorkspacePage } from './pages/WorkspacePage';
-import { PlanningWeekPage } from './pages/PlanningWeekPage';
 import { TeamsPage } from './pages/TeamsPage';
 import { AthletesPage } from './pages/AthletesPage';
-import { TeamDetailPage } from './pages/TeamDetailPage';
-import { SessionPage } from './pages/SessionPage';
-import { CloseSessionPage } from './pages/CloseSessionPage';
-import { HistoryPage } from './pages/HistoryPage';
+import { PlanningPage } from './pages/PlanningPage';
+import { SessionsPage } from './pages/SessionsPage';
+import { SessionDetailPage } from './pages/SessionDetailPage';
 
-function App() {
-  const route = useRoute();
+function ProtectedRoutes() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-ink-400 text-sm">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/signin" replace />;
+  }
 
   return (
-    <Layout>
-      {route.name === 'workspace' && <WorkspacePage />}
-      {route.name === 'planning' && <PlanningWeekPage year={route.year} week={route.week} />}
-      {route.name === 'athletes' && <AthletesPage />}
-      {route.name === 'teams' && <TeamsPage />}
-      {route.name === 'team' && <TeamDetailPage teamId={route.teamId} />}
-      {route.name === 'session' && <SessionPage sessionId={route.sessionId} />}
-      {route.name === 'review' && <CloseSessionPage sessionId={route.sessionId} />}
-      {route.name === 'history' && <HistoryPage />}
-    </Layout>
+    <WorkingContextProvider>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<WorkspacePage />} />
+          <Route path="/teams" element={<TeamsPage />} />
+          <Route path="/athletes" element={<AthletesPage />} />
+          <Route path="/planning" element={<PlanningPage />} />
+          <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/sessions/:id" element={<SessionDetailPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Layout>
+    </WorkingContextProvider>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/signin" element={<SignInPage />} />
+          <Route path="/signup" element={<SignUpPage />} />
+          <Route path="/*" element={<ProtectedRoutes />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  );
+}
